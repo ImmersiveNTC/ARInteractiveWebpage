@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive AR Loader</title>
+  <meta name="description" content="A premium 3D & AR model viewer with dynamic HSL-based coloring and customizable locked 30fps animation controls.">
+  
+  <!-- Outfit Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+  
+  <!-- Import Map for Three.js -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  
+  <!-- ES Modules Integration -->
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <!-- Dynamic Halo Background -->
+  <ar-background></ar-background>
+  
+  <!-- Custom Header -->
+  <ar-header></ar-header>
+  
+  <!-- Interactive Dynamic Theme Color Picker Overlay (Optional UI helper for testing) -->
+  <div class="config-overlay">
+    <div class="color-picker-container">
+      <span class="color-picker-label">Theme Color</span>
+      <div class="color-input-wrapper">
+        <input type="color" id="themeColorPicker" value="#6366f1" title="Select theme color">
+      </div>
+    </div>
+  </div>
+  
+  <!-- Main 3D Stage -->
+  <main class="main-container">
+    <ar-viewer></ar-viewer>
+  </main>
+  
+  <!-- Custom Footer -->
+  <ar-footer></ar-footer>
+</body>
+</html>

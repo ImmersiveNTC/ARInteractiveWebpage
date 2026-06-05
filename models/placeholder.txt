@@ -1,0 +1,3 @@
+Place your 'model.gltf' or 'model.glb' inside this folder.
+The viewer is set to search for 'models/model.gltf' first, and falls back to 'models/model.glb'.
+If neither is found, it will automatically load a gorgeous procedural animated glass box & glowing core sphere fallback.
