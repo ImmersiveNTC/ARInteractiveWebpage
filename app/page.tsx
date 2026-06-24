@@ -1,0 +1,113 @@
+'use client';
+
+import Link from 'next/link';
+import { useState } from 'react';
+
+export default function Home() {
+  const [qrEnlarged, setQrEnlarged] = useState(false);
+
+  return (
+    <div className="app-page min-h-screen text-white font-sans flex flex-col items-center justify-center p-6 bg-[#0a0a0a]">
+      
+      {/* Header */}
+      <header className="mb-12 text-center">
+        <h1 className="text-4xl md:text-5xl font-bold mb-4 tracking-tight">
+          Immersive Experiences
+        </h1>
+        <p className="text-white/60 max-w-lg mx-auto">
+          Explore our collection of interactive 3D models and augmented reality assets.
+        </p>
+      </header>
+
+      {/* QR Code Card (Centered Above) */}
+      <div className="mb-16 relative z-10">
+        <div 
+          onClick={() => setQrEnlarged(!qrEnlarged)}
+          className={`cursor-pointer transition-all duration-500 ease-in-out border border-white/10 bg-white/5 rounded-3xl overflow-hidden shadow-2xl flex flex-col items-center justify-center
+            ${qrEnlarged 
+              ? 'fixed inset-4 md:inset-20 z-50 bg-[#111] backdrop-blur-xl' 
+              : 'w-64 h-72 hover:scale-105 hover:bg-white/10'
+            }
+          `}
+        >
+          {qrEnlarged && (
+            <button 
+              className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors p-2 text-2xl"
+              onClick={(e) => {
+                e.stopPropagation();
+                setQrEnlarged(false);
+              }}
+            >
+              ✕
+            </button>
+          )}
+          
+          <div className="p-6 flex flex-col items-center w-full h-full justify-center">
+            <h2 className={`font-semibold text-white/90 mb-6 ${qrEnlarged ? 'text-3xl' : 'text-xl'}`}>
+              Scan to view on mobile
+            </h2>
+            <div className={`bg-white rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-500 ${qrEnlarged ? 'w-[60vmin] h-[60vmin]' : 'w-40 h-40'}`}>
+              {/* Placeholder for QR Code */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
+                src={`${process.env.NODE_ENV === 'production' ? '/ARInteractiveWebpage' : ''}/qr-placeholder.png`}
+                alt="QR Code Placeholder" 
+                className="w-full h-full object-cover opacity-20"
+              />
+            </div>
+            {qrEnlarged && (
+              <p className="mt-8 text-white/50 text-lg">Tap anywhere to close</p>
+            )}
+          </div>
+        </div>
+        
+        {/* Backdrop for enlarged QR */}
+        {qrEnlarged && (
+          <div 
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40"
+            onClick={() => setQrEnlarged(false)}
+          />
+        )}
+      </div>
+
+      {/* The Two Main Cards */}
+      <div className="flex flex-col md:flex-row gap-8 w-full max-w-4xl">
+        
+        {/* Interactive 3D Gallery Card */}
+        <Link 
+          href="/i3d" 
+          className="flex-1 group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10 hover:border-white/20 hover:-translate-y-1"
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex flex-col items-center text-center h-full">
+            <div className="w-20 h-20 mb-6 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-4xl">
+              🧊
+            </div>
+            <h2 className="text-2xl font-bold mb-3 text-white">Interactive 3D Gallery</h2>
+            <p className="text-white/60">
+              Explore and interact with high-fidelity 3D models directly in your browser.
+            </p>
+          </div>
+        </Link>
+
+        {/* AR Gallery Card */}
+        <Link 
+          href="/iosar" 
+          className="flex-1 group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10 hover:border-white/20 hover:-translate-y-1"
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex flex-col items-center text-center h-full">
+            <div className="w-20 h-20 mb-6 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-4xl">
+              📱
+            </div>
+            <h2 className="text-2xl font-bold mb-3 text-white">AR Gallery</h2>
+            <p className="text-white/60">
+              Launch models into your physical space using Augmented Reality on iOS devices.
+            </p>
+          </div>
+        </Link>
+
+      </div>
+    </div>
+  );
+}
