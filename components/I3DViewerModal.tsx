@@ -34,6 +34,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     playDirection: 1,
     isPlaying: false,
     currentActionIndex: -1,
+    hasCustomJson: false,
   });
 
   const engineState = useRef<{
@@ -67,6 +68,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       .then((data) => {
         if (data && data.actions_sequence && data.keyframes) {
           animationState.current.keyframesJson = data as any;
+          animationState.current.hasCustomJson = true;
           console.log(`Loaded bespoke JSON for ${fileName}`);
         }
       })
@@ -155,6 +157,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
           const parsed = typeof customConfig === 'string' ? JSON.parse(customConfig) : customConfig;
           if (parsed && parsed.actions_sequence && parsed.keyframes) {
             animationState.current.keyframesJson = parsed as any;
+            animationState.current.hasCustomJson = true;
             console.log(`Loaded built-in animation_config from GLB!`);
           }
         } catch(e) {
@@ -279,15 +282,17 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
         eng.accumulatedTime += delta;
         while (eng.accumulatedTime >= eng.frameDuration) {
           eng.accumulatedTime -= eng.frameDuration;
-          anim.currentFrame += anim.playDirection;
+          
+          let nextFrame = anim.currentFrame + anim.playDirection;
 
-          if (anim.playDirection === 1 && anim.currentFrame >= anim.targetFrame) {
-            anim.currentFrame = anim.targetFrame;
+          if (anim.playDirection === 1 && nextFrame >= anim.targetFrame) {
+            nextFrame = anim.targetFrame;
             anim.isPlaying = false;
-          } else if (anim.playDirection === -1 && anim.currentFrame <= anim.targetFrame) {
-            anim.currentFrame = anim.targetFrame;
+          } else if (anim.playDirection === -1 && nextFrame <= anim.targetFrame) {
+            nextFrame = anim.targetFrame;
             anim.isPlaying = false;
           }
+          anim.currentFrame = nextFrame;
 
           if (eng.action && eng.mixer) {
             eng.action.paused = false;
@@ -320,49 +325,80 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
 
   const navigateSequence = (direction: 'prev' | 'next') => {
     const anim = animationState.current;
+    const eng = engineState.current;
     if (anim.isPlaying) return;
 
-    const seq = anim.keyframesJson.actions_sequence;
-    if (direction === 'next') {
-      anim.currentActionIndex = (anim.currentActionIndex + 1) % seq.length;
-    } else {
-      if (anim.currentActionIndex <= 0) {
-        anim.currentActionIndex = seq.length - 1;
+    if (anim.hasCustomJson && anim.keyframesJson.actions_sequence && anim.keyframesJson.actions_sequence.length > 0) {
+      const seq = anim.keyframesJson.actions_sequence;
+      if (direction === 'next') {
+        anim.currentActionIndex = (anim.currentActionIndex + 1) % seq.length;
       } else {
-        anim.currentActionIndex = anim.currentActionIndex - 1;
+        if (anim.currentActionIndex <= 0) {
+          anim.currentActionIndex = seq.length - 1;
+        } else {
+          anim.currentActionIndex = anim.currentActionIndex - 1;
+        }
       }
-    }
 
-    const chosenAction = seq[anim.currentActionIndex] as keyof typeof anim.keyframesJson.keyframes;
-    const range = anim.keyframesJson.keyframes[chosenAction];
+      const chosenAction = seq[anim.currentActionIndex] as keyof typeof anim.keyframesJson.keyframes;
+      const range = anim.keyframesJson.keyframes[chosenAction];
 
-    if (Array.isArray(range) && range.length === 2) {
-      const [startFrame, endFrame] = range;
-      setFrame(startFrame);
-      anim.targetFrame = endFrame;
-      anim.playDirection = 1;
+      if (Array.isArray(range) && range.length === 2) {
+        const [startFrame, endFrame] = range;
+        setFrame(startFrame);
+        anim.targetFrame = endFrame;
+        anim.playDirection = 1;
+        anim.isPlaying = true;
+      }
+    } else {
+      let clipMax = 100;
+      if (eng.action) {
+        const clipFrames = Math.floor(eng.action.getClip().duration * 30);
+        if (clipFrames > 0) clipMax = clipFrames;
+      }
+      
+      let nextFrame = anim.currentFrame + (direction === 'next' ? 25 : -25);
+      if (nextFrame < 1) nextFrame = 1;
+      if (nextFrame > clipMax) nextFrame = clipMax;
+      
+      anim.targetFrame = nextFrame;
+      anim.playDirection = direction === 'next' ? 1 : -1;
       anim.isPlaying = true;
     }
   };
 
   const toggleExplode = () => {
     const anim = animationState.current;
+    const eng = engineState.current;
     if (anim.isPlaying) return;
 
-    const range = anim.keyframesJson.keyframes.W2E;
-    const [startFrame, endFrame] = range;
+    let startFrame = 1;
+    let endFrame = 100;
 
-    const atStart = Math.abs(anim.currentFrame - startFrame) < 0.5;
-    const atEnd = Math.abs(anim.currentFrame - endFrame) < 0.5;
+    if (anim.hasCustomJson && anim.keyframesJson.keyframes && anim.keyframesJson.keyframes.W2E) {
+      const range = anim.keyframesJson.keyframes.W2E;
+      if (Array.isArray(range) && range.length === 2) {
+        startFrame = range[0];
+        endFrame = range[1];
+      }
+    } else {
+      if (eng.action) {
+        const clipFrames = Math.floor(eng.action.getClip().duration * 30);
+        if (clipFrames > 0 && clipFrames < 100) {
+          endFrame = clipFrames;
+        }
+      }
+    }
+
+    const atStart = Math.abs(anim.currentFrame - startFrame) <= 0.5;
+    const atEnd = Math.abs(anim.currentFrame - endFrame) <= 0.5;
 
     if (atStart) {
       anim.targetFrame = endFrame;
       anim.playDirection = 1;
-      anim.isPlaying = true;
     } else if (atEnd) {
       anim.targetFrame = startFrame;
       anim.playDirection = -1;
-      anim.isPlaying = true;
     } else {
       const distToStart = Math.abs(anim.currentFrame - startFrame);
       const distToEnd = Math.abs(anim.currentFrame - endFrame);
@@ -373,8 +409,8 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
         anim.targetFrame = endFrame;
         anim.playDirection = 1;
       }
-      anim.isPlaying = true;
     }
+    anim.isPlaying = true;
   };
 
   return (

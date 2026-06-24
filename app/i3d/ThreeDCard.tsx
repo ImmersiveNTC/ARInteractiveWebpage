@@ -297,15 +297,18 @@ export function ThreeDCard({ index, title, subtitle, themeColor }: ThreeDCardPro
     let target = endFrame;
     let direction = 1;
 
-    if (current === startFrame) {
+    const atStart = Math.abs(current - startFrame) <= 0.5;
+    const atEnd = Math.abs(current - endFrame) <= 0.5;
+
+    if (atStart) {
       target = endFrame;
       direction = 1;
-    } else if (current === endFrame) {
+    } else if (atEnd) {
       target = startFrame;
       direction = -1;
-    } else if (current > startFrame && current < endFrame) {
-      const distToStart = current - startFrame;
-      const distToEnd = endFrame - current;
+    } else {
+      const distToStart = Math.abs(current - startFrame);
+      const distToEnd = Math.abs(current - endFrame);
       if (distToStart > distToEnd) {
         target = startFrame;
         direction = -1;
@@ -313,10 +316,6 @@ export function ThreeDCard({ index, title, subtitle, themeColor }: ThreeDCardPro
         target = endFrame;
         direction = 1;
       }
-    } else {
-      seekToFrame(startFrame);
-      target = endFrame;
-      direction = 1;
     }
 
     stateRef.current.targetFrame = target;
@@ -551,22 +550,23 @@ export function ThreeDCard({ index, title, subtitle, themeColor }: ThreeDCardPro
         while (accumulatedTime >= frameDuration) {
           accumulatedTime -= frameDuration;
 
-          stateRef.current.currentFrame += stateRef.current.playDirection;
+          let nextFrame = stateRef.current.currentFrame + stateRef.current.playDirection;
 
           let reached = false;
           if (
             stateRef.current.playDirection === 1 &&
-            stateRef.current.currentFrame >= stateRef.current.targetFrame
+            nextFrame >= stateRef.current.targetFrame
           ) {
-            stateRef.current.currentFrame = stateRef.current.targetFrame;
+            nextFrame = stateRef.current.targetFrame;
             reached = true;
           } else if (
             stateRef.current.playDirection === -1 &&
-            stateRef.current.currentFrame <= stateRef.current.targetFrame
+            nextFrame <= stateRef.current.targetFrame
           ) {
-            stateRef.current.currentFrame = stateRef.current.targetFrame;
+            nextFrame = stateRef.current.targetFrame;
             reached = true;
           }
+          stateRef.current.currentFrame = nextFrame;
 
           updateStatusText(
             stateRef.current.currentFrame,
