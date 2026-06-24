@@ -132,8 +132,21 @@ class ARViewer extends HTMLElement {
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
-    this.controls.maxDistance = 10;
-    this.controls.minDistance = 1.5;
+    this.controls.maxDistance = 50;
+    this.controls.minDistance = 0.5;
+
+    // Liam - Orbit around centre
+this.controls.target.set(
+    0,
+    0,
+    0
+);
+
+this.controls.enablePan = true;
+this.controls.enableZoom = true;
+this.controls.enableRotate = true;
+
+this.controls.update();
 
     // Handle resizing automatically using ResizeObserver
     const resizeObserver = new ResizeObserver((entries) => {
@@ -157,26 +170,83 @@ class ARViewer extends HTMLElement {
   }
 
   loadModel() {
+
     const loader = new GLTFLoader();
-    
-    loader.load(
-      'models/model.gltf',
-      (gltf) => this.onModelLoaded(gltf),
-      undefined,
-      () => {
-        // Try GLB secondary option
-        loader.load(
-          'models/model.glb',
-          (gltf) => this.onModelLoaded(gltf),
-          undefined,
-          () => {
-            console.warn('Could not load models/model.gltf or model.glb. Rendering fallback placeholder cube.');
-            this.createPlaceholderModel();
-          }
-        );
-      }
+
+    console.log(
+        "Loading finalMiniPillar.glb..."
     );
-  }
+
+    loader.load(
+
+        'models/finalMiniPillar.glb',
+
+        (gltf) => {
+
+            console.log(
+                "Mini pillar loaded successfully!"
+            );
+
+            this.onModelLoaded(gltf);
+        },
+
+        (progress) => {
+
+            if (progress.total > 0) {
+
+                console.log(
+                    `Loading ${
+                        (
+                            progress.loaded /
+                            progress.total
+                        ) * 100
+                    }%`
+                );
+            }
+        },
+
+        (error) => {
+
+            console.error(
+                "Failed to load finalMiniPillar.glb",
+                error
+            );
+
+            console.warn(
+                "Showing placeholder model instead."
+            );
+
+            this.createPlaceholderModel();
+        }
+    );
+
+    const explodeButton =
+    document.createElement("button");
+
+explodeButton.textContent =
+    "Explode";
+
+explodeButton.style.position =
+    "absolute";
+
+explodeButton.style.top =
+    "20px";
+
+explodeButton.style.right =
+    "20px";
+
+this.appendChild(
+    explodeButton
+);
+
+explodeButton.addEventListener(
+    "click",
+    () => {
+
+        this.explodedView.toggle();
+    }
+);
+}
 
   onModelLoaded(gltf) {
     this.modelGroup = gltf.scene;
@@ -192,6 +262,20 @@ class ARViewer extends HTMLElement {
     wrapper.add(this.modelGroup);
     this.scene.add(wrapper);
     this.modelGroup = wrapper;
+
+    // Liam - Reset model orientation
+this.modelGroup.rotation.set(
+    0,
+    0,
+    0
+);
+
+// Liam - Move model to centre
+this.modelGroup.position.set(
+    0,
+    0,
+    0
+);
 
     // Position camera to fit model size
     const maxDim = Math.max(size.x, size.y, size.z);
@@ -354,6 +438,8 @@ class ARViewer extends HTMLElement {
     this.action.paused = true;
     this.setFrame(this.currentFrame);
   }
+
+  
 
   createMockAnimationsForLoadedModel() {
     const times = [];
