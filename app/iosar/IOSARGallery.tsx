@@ -93,7 +93,7 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
         onClick={e => e.stopPropagation()}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`${process.env.NODE_ENV === 'production' ? '/ARInteractiveWebpage' : ''}/Logo.png`} alt="" width={1} height={1} />
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="" width={1} height={1} />
       </a>
 
       {/* Card body */}
