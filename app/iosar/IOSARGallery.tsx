@@ -52,10 +52,13 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
   const isIOS = useIsIOS();
   const linkRef = useRef<HTMLAnchorElement>(null);
   const [isLaunching, setIsLaunching] = useState(false);
-  const [cacheBuster, setCacheBuster] = useState(Date.now());
 
   const handleCardClick = () => {
-    if (!isIOS) {
+    if (isIOS) {
+      setIsLaunching(true);
+      setTimeout(() => setIsLaunching(false), 3000);
+      linkRef.current?.click();
+    } else {
       onDesktopClick(model);
     }
   };
@@ -80,28 +83,24 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
       {/* Pulsing glow ring on hover */}
       <div className="iosar-card__glow" style={{ background: model.accentColor }} />
 
-      {/* iOS rel="ar" anchor — must wrap exactly one img for Quick Look trigger */}
-      {/* We make it absolute and cover the entire card so the user taps it directly, bypassing browser restrictions on programmatic clicks */}
+      {/* iOS rel="ar" hidden anchor — must wrap exactly one img for Quick Look trigger */}
+      {/* WebKit requires a real, successfully loaded image. We use the QR code image heavily scaled down. */}
       {isIOS && (
         <a
-          href={`${model.fileUrl}?v=${cacheBuster}`}
+          ref={linkRef}
+          href={model.fileUrl}
           rel="ar"
           aria-hidden="true"
           tabIndex={-1}
-          style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'block' }}
-          onClick={() => {
-            setIsLaunching(true);
-            setTimeout(() => {
-              setIsLaunching(false);
-              setCacheBuster(Date.now());
-            }, 3500);
-          }}
+          style={{ position: 'absolute', width: 1, height: 1, opacity: 0.01, pointerEvents: 'none' }}
+          onClick={e => e.stopPropagation()}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img 
-            src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" 
+            src={`${process.env.NODE_ENV === 'production' ? '/ARInteractiveWebpage' : ''}/immersive-qr-code.png`} 
             alt="" 
-            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0 }} 
+            width={1} 
+            height={1} 
           />
         </a>
       )}
