@@ -3,7 +3,7 @@ import path from 'path';
 import { I3DGalleryCard } from '../../components/I3DGalleryCard';
 
 export const metadata = {
-  title: "Interactive 3D assets",
+  title: "Interactive 3D Gallery",
   description: "Explore a curated collection of interactive 3D models.",
 };
 
@@ -77,7 +77,7 @@ export default function I3DPage() {
         {/* ── Header ── */}
         <header className="mb-20">
           <h1 className="i3d-header__title">
-            Interactive 3D assets
+            Interactive 3D Gallery
           </h1>
           <p className="i3d-header__sub">
             Explore interactive 3D models. Click any card to open the viewer.

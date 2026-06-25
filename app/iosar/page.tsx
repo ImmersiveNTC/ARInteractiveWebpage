@@ -3,7 +3,7 @@ import path from 'path';
 import { IOSARGallery } from './IOSARGallery';
 
 export const metadata = {
-  title: "AR assets",
+  title: "AR Gallery",
   description: "View real 3D models in augmented reality on your iPhone. Tap any model to instantly launch AR Quick Look.",
 };
 

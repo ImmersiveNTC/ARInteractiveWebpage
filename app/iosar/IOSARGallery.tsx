@@ -235,7 +235,7 @@ export function IOSARGallery({ models }: IOSARGalleryProps) {
             iPhone AR Experience
           </div>
           <h1 className="iosar-header__title">
-            AR assets
+            AR Gallery
           </h1>
           <p className="iosar-header__sub">
             Tap any model to launch it in{' '}
