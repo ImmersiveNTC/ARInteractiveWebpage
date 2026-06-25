@@ -50,15 +50,18 @@ function ARTargetIcon({ accentColor }: { accentColor: string }) {
 
 function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (model: ModelData) => void }) {
   const isIOS = useIsIOS();
+  const isEdgeIOS = typeof window !== 'undefined' && window.navigator.userAgent.includes('EdgiOS');
   const linkRef = useRef<HTMLAnchorElement>(null);
   const [isLaunching, setIsLaunching] = useState(false);
 
   const handleCardClick = () => {
     if (isIOS) {
+      // If it's Edge, the tap is handled natively by the absolute overlay anchor.
+      if (isEdgeIOS) return;
+
       const ua = window.navigator.userAgent;
-      // Microsoft Edge (EdgiOS) and Firefox (FxiOS) on iOS do not support AR Quick Look
-      if (ua.includes('EdgiOS') || ua.includes('FxiOS')) {
-        alert("AR Quick Look is not supported in this browser. Please open this page in Safari or Chrome to launch the AR experience.");
+      if (ua.includes('FxiOS')) {
+        alert("AR Quick Look is not supported in Firefox. Please open this page in Safari, Chrome, or Edge to launch the AR experience.");
         return;
       }
       
@@ -90,9 +93,10 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
       {/* Pulsing glow ring on hover */}
       <div className="iosar-card__glow" style={{ background: model.accentColor }} />
 
-      {/* iOS rel="ar" hidden anchor — must wrap exactly one img for Quick Look trigger */}
-      {/* WebKit requires a real, successfully loaded image. We use the QR code image heavily scaled down. */}
-      {isIOS && (
+      {/* iOS rel="ar" anchors for AR Quick Look */}
+      
+      {/* 1. Safari/Chrome Strategy: Hidden programmatic anchor */}
+      {isIOS && !isEdgeIOS && (
         <a
           ref={linkRef}
           href={model.fileUrl}
@@ -108,6 +112,32 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
             alt="" 
             width={1} 
             height={1} 
+          />
+        </a>
+      )}
+
+      {/* 2. Edge iOS Strategy: Absolute overlay anchor */}
+      {/* Edge blocks programmatic clicks, so the user must tap the anchor directly. */}
+      {/* We use target="_blank" and download so Edge doesn't permanently hijack the main page navigation. */}
+      {isIOS && isEdgeIOS && (
+        <a
+          href={model.fileUrl}
+          rel="ar"
+          target="_blank"
+          download={model.fileName}
+          aria-hidden="true"
+          tabIndex={-1}
+          style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'block' }}
+          onClick={() => {
+            setIsLaunching(true);
+            setTimeout(() => setIsLaunching(false), 3500);
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img 
+            src={`${process.env.NODE_ENV === 'production' ? '/ARInteractiveWebpage' : ''}/immersive-qr-code.png`} 
+            alt="" 
+            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.01 }} 
           />
         </a>
       )}
