@@ -53,10 +53,7 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
   const linkRef = useRef<HTMLAnchorElement>(null);
 
   const handleCardClick = () => {
-    if (isIOS) {
-      // Programmatically trigger the rel="ar" anchor
-      linkRef.current?.click();
-    } else {
+    if (!isIOS) {
       onDesktopClick(model);
     }
   };
@@ -81,20 +78,24 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
       {/* Pulsing glow ring on hover */}
       <div className="iosar-card__glow" style={{ background: model.accentColor }} />
 
-      {/* iOS rel="ar" hidden anchor — must wrap an img for Quick Look trigger */}
-      {/* We hide this visually but keep it in DOM so iOS intercepts the tap */}
-      <a
-        ref={linkRef}
-        href={model.fileUrl}
-        rel="ar"
-        className="iosar-ar-link"
-        aria-hidden="true"
-        tabIndex={-1}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="" width={1} height={1} />
-      </a>
+      {/* iOS rel="ar" anchor — must wrap exactly one img for Quick Look trigger */}
+      {/* We make it absolute and cover the entire card so the user taps it directly, bypassing browser restrictions on programmatic clicks */}
+      {isIOS && (
+        <a
+          href={model.fileUrl}
+          rel="ar"
+          aria-hidden="true"
+          tabIndex={-1}
+          style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'block' }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img 
+            src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" 
+            alt="" 
+            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0 }} 
+          />
+        </a>
+      )}
 
       {/* Card body */}
       <div className="iosar-card__body">
