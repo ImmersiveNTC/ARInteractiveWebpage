@@ -52,6 +52,7 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
   const isIOS = useIsIOS();
   const linkRef = useRef<HTMLAnchorElement>(null);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [cacheBuster, setCacheBuster] = useState(Date.now());
 
   const handleCardClick = () => {
     if (!isIOS) {
@@ -83,14 +84,17 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
       {/* We make it absolute and cover the entire card so the user taps it directly, bypassing browser restrictions on programmatic clicks */}
       {isIOS && (
         <a
-          href={`${model.fileUrl}#allowsContentFallback=0`}
+          href={`${model.fileUrl}?v=${cacheBuster}`}
           rel="ar"
           aria-hidden="true"
           tabIndex={-1}
           style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'block' }}
           onClick={() => {
             setIsLaunching(true);
-            setTimeout(() => setIsLaunching(false), 3500);
+            setTimeout(() => {
+              setIsLaunching(false);
+              setCacheBuster(Date.now());
+            }, 3500);
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
