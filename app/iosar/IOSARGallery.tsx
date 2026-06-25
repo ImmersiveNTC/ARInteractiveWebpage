@@ -51,6 +51,7 @@ function ARTargetIcon({ accentColor }: { accentColor: string }) {
 function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (model: ModelData) => void }) {
   const isIOS = useIsIOS();
   const linkRef = useRef<HTMLAnchorElement>(null);
+  const [isLaunching, setIsLaunching] = useState(false);
 
   const handleCardClick = () => {
     if (!isIOS) {
@@ -82,11 +83,15 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
       {/* We make it absolute and cover the entire card so the user taps it directly, bypassing browser restrictions on programmatic clicks */}
       {isIOS && (
         <a
-          href={model.fileUrl}
+          href={`${model.fileUrl}#allowsContentFallback=0`}
           rel="ar"
           aria-hidden="true"
           tabIndex={-1}
           style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'block' }}
+          onClick={() => {
+            setIsLaunching(true);
+            setTimeout(() => setIsLaunching(false), 3500);
+          }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img 
@@ -123,11 +128,17 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
       <div className="iosar-card__cta">
         {isIOS ? (
           <>
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-              <circle cx="12" cy="13" r="4" />
-            </svg>
-            View in AR
+            {isLaunching ? (
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+            )}
+            {isLaunching ? 'Launching AR...' : 'View in AR'}
           </>
         ) : (
           <>
