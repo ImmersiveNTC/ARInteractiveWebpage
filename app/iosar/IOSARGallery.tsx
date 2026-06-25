@@ -55,6 +55,13 @@ function ARCard({ model, onDesktopClick }: { model: ModelData; onDesktopClick: (
 
   const handleCardClick = () => {
     if (isIOS) {
+      const ua = window.navigator.userAgent;
+      // Microsoft Edge (EdgiOS) and Firefox (FxiOS) on iOS do not support AR Quick Look
+      if (ua.includes('EdgiOS') || ua.includes('FxiOS')) {
+        alert("AR Quick Look is not supported in this browser. Please open this page in Safari or Chrome to launch the AR experience.");
+        return;
+      }
+      
       setIsLaunching(true);
       setTimeout(() => setIsLaunching(false), 3000);
       linkRef.current?.click();
