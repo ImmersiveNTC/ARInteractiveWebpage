@@ -104,12 +104,12 @@ export default function Home() {
               Scan to view on mobile
             </h2>
             <div className={`bg-white rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-500 ${qrEnlarged ? 'w-[60vmin] h-[60vmin]' : 'w-40 h-40'}`}>
-              <svg viewBox="0 0 100 100" className="w-full h-full text-black/20 p-4" fill="currentColor">
-                <path fillRule="evenodd" clipRule="evenodd" d="M10 10h30v30H10V10zm5 5v20h20V15H15zm45-5h30v30H60V10zm5 5v20h20V15H65zM10 60h30v30H10V60zm5 5v20h20V65H15zm40 0h10v10H55V65zm20 0h10v10H75V65zm-20 20h10v10H55V85zm20 0h10v10H75V85zm-10-10h10v10H65V75zm0-20h10v10H65V55zm-10-10h10v10H55V45zm20 0h10v10H75V45zm0 10h10v10H75V55z" />
-                <rect x="20" y="20" width="10" height="10" />
-                <rect x="70" y="20" width="10" height="10" />
-                <rect x="20" y="70" width="10" height="10" />
-              </svg>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
+                src={`${process.env.NODE_ENV === 'production' ? '/ARInteractiveWebpage' : ''}/immersive-qr-code.png`}
+                alt="QR Code" 
+                className="w-full h-full object-contain p-2"
+              />
             </div>
             {qrEnlarged && (
               <p className="mt-8 text-white/50 text-lg">Tap anywhere to close</p>
