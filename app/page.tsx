@@ -1,10 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Home() {
   const [qrEnlarged, setQrEnlarged] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [pageUrl, setPageUrl] = useState('https://.../ARInteractiveWebpage');
+
+  useEffect(() => {
+    setPageUrl(window.location.href);
+  }, []);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    navigator.clipboard.writeText(pageUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="app-page min-h-screen text-white font-sans flex flex-col items-center justify-center p-6 bg-[#0a0a0a]">
@@ -83,7 +97,7 @@ export default function Home() {
           className={`cursor-pointer transition-all duration-500 ease-in-out border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col items-center justify-center
             ${qrEnlarged 
               ? 'fixed inset-4 md:inset-20 z-[60] bg-[#111] backdrop-blur-xl' 
-              : 'w-64 h-72 bg-white/5 hover:scale-105 hover:bg-white/10'
+              : 'w-[19rem] h-auto py-8 bg-white/5 hover:scale-105 hover:bg-white/10'
             }
           `}
         >
@@ -103,16 +117,38 @@ export default function Home() {
             <h2 className={`font-semibold text-white/90 mb-6 ${qrEnlarged ? 'text-3xl' : 'text-xl'}`}>
               Scan to view on mobile
             </h2>
-            <div className={`bg-white rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-500 ${qrEnlarged ? 'w-[60vmin] h-[60vmin]' : 'w-40 h-40'}`}>
+            
+            {/* Make QR Code a Hyperlink */}
+            <a 
+              href={pageUrl}
+              onClick={handleCopy}
+              className={`bg-white rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-500 ${qrEnlarged ? 'w-[60vmin] h-[60vmin]' : 'w-40 h-40'} hover:opacity-80`}
+              title="Click to copy link"
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img 
                 src={`${process.env.NODE_ENV === 'production' ? '/ARInteractiveWebpage' : ''}/immersive-qr-code.png`}
                 alt="QR Code" 
                 className="w-full h-full object-contain p-2"
               />
-            </div>
+            </a>
+
+            {/* Copy to Clipboard Button */}
+            <button
+              onClick={handleCopy}
+              className={`mt-6 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 transition-colors border border-white/10 w-full max-w-[260px] ${qrEnlarged ? 'scale-125 mt-10' : ''}`}
+            >
+              <span className="text-xs text-white/70 truncate flex-1 text-left">
+                {copied ? 'Link copied!' : pageUrl.replace(/^https?:\/\//, '')}
+              </span>
+              <svg viewBox="0 0 24 24" className="w-6 h-6 text-white/90 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+
             {qrEnlarged && (
-              <p className="mt-8 text-white/50 text-lg">Tap anywhere to close</p>
+              <p className="mt-8 text-white/50 text-lg">Tap outside to close</p>
             )}
           </div>
         </div>

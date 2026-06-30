@@ -287,7 +287,7 @@ export function IOSARGallery({ models }: IOSARGalleryProps) {
           className="inline-flex items-center gap-3 px-4 py-2 mb-10 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all text-sm text-white/70 hover:text-white group w-fit"
         >
           <div className="w-5 h-5 flex items-center justify-center relative" style={{ ['--i3d-accent' as string]: 'rgba(138, 86, 255, 0.8)' }}>
-            <div className="i3d-cube-wrap" style={{ transform: 'scale(0.25)', transformOrigin: 'center' }}>
+            <div className="i3d-cube-wrap" style={{ transform: 'scale(0.4)', transformOrigin: 'center', marginBottom: 0 }}>
               <div className="i3d-cube">
                 <div className="i3d-cube__face i3d-cube__face--front" />
                 <div className="i3d-cube__face i3d-cube__face--back" />
