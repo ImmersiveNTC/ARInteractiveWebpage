@@ -52,6 +52,8 @@ const ACCENT_PALETTE = [
   "rgba(168, 85, 247, 0.8)",   // violet
 ];
 
+import Link from 'next/link';
+
 /* ─── Page Component ─────────────────────────────────────────────────────── */
 
 export default function I3DPage() {
@@ -74,6 +76,26 @@ export default function I3DPage() {
   return (
     <div className="app-page min-h-screen text-white font-sans">
       <main className="mx-auto w-full max-w-7xl px-6 py-24 md:py-32">
+        {/* ── Switch to AR Gallery Button ── */}
+        <Link 
+          href="/iosar" 
+          className="inline-flex items-center gap-3 px-4 py-2 mb-10 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all text-sm text-white/70 hover:text-white group w-fit"
+        >
+          <div className="w-5 h-5 flex items-center justify-center relative">
+            <div className="iosar-target" aria-hidden="true" style={{ transform: 'scale(0.25)', transformOrigin: 'center' }}>
+              <div className="iosar-target__ring iosar-target__ring--outer" style={{ borderColor: 'rgba(251, 146, 60, 0.85)' }} />
+              <div className="iosar-target__ring iosar-target__ring--inner" style={{ borderColor: 'rgba(251, 146, 60, 0.85)' }} />
+              <div className="iosar-target__corners">
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} className={`iosar-target__corner iosar-target__corner--${i}`} style={{ borderColor: 'rgba(251, 146, 60, 0.85)' }} />
+                ))}
+              </div>
+              <div className="iosar-target__dot" style={{ backgroundColor: 'rgba(251, 146, 60, 0.85)' }} />
+            </div>
+          </div>
+          Switch to AR Gallery
+        </Link>
+
         {/* ── Header ── */}
         <header className="mb-20">
           <h1 className="i3d-header__title">
