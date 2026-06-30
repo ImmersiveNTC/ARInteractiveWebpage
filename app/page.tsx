@@ -118,20 +118,14 @@ export default function Home() {
               Scan to view on mobile
             </h2>
             
-            {/* Make QR Code a Hyperlink */}
-            <a 
-              href={pageUrl}
-              onClick={handleCopy}
-              className={`bg-white rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-500 ${qrEnlarged ? 'w-[60vmin] h-[60vmin]' : 'w-40 h-40'} hover:opacity-80`}
-              title="Click to copy link"
-            >
+            <div className={`bg-white rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-500 ${qrEnlarged ? 'w-[60vmin] h-[60vmin]' : 'w-40 h-40'}`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img 
                 src={`${process.env.NODE_ENV === 'production' ? '/ARInteractiveWebpage' : ''}/immersive-qr-code.png`}
                 alt="QR Code" 
                 className="w-full h-full object-contain p-2"
               />
-            </a>
+            </div>
 
             {/* Copy to Clipboard Button */}
             <button
