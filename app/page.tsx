@@ -1,16 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 export default function Home() {
   const [qrEnlarged, setQrEnlarged] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [pageUrl, setPageUrl] = useState('https://.../ARInteractiveWebpage');
-
-  useEffect(() => {
-    setPageUrl(window.location.href);
-  }, []);
+  const pageUrl = 'https://immersiventc.github.io/ARInteractiveWebpage/';
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
