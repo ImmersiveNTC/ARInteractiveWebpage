@@ -24,7 +24,9 @@ function useIsIOS() {
   const [isIOS, setIsIOS] = useState(false);
   useEffect(() => {
     const ua = navigator.userAgent;
-    setIsIOS(/iPad|iPhone|iPod/.test(ua) && !(window as Window & { MSStream?: unknown }).MSStream);
+    setTimeout(() => {
+      setIsIOS(/iPad|iPhone|iPod/.test(ua) && !(window as Window & { MSStream?: unknown }).MSStream);
+    }, 0);
   }, []);
   return isIOS;
 }
@@ -275,7 +277,9 @@ export function IOSARGallery({ models }: IOSARGalleryProps) {
   const [pageUrl, setPageUrl] = useState('');
 
   useEffect(() => {
-    setPageUrl(window.location.href);
+    setTimeout(() => {
+      setPageUrl(window.location.href);
+    }, 0);
   }, []);
 
   return (

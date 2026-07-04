@@ -12,13 +12,26 @@ type I3DViewerModalProps = {
   onClose: () => void;
 };
 
+interface KeyframesJson {
+  actions_sequence: string[];
+  keyframes: Record<string, number | number[]>;
+}
+
 export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
 
   // Animation states
-  const animationState = useRef({
+  const animationState = useRef<{
+    keyframesJson: KeyframesJson;
+    currentFrame: number;
+    targetFrame: number;
+    playDirection: number;
+    isPlaying: boolean;
+    currentActionIndex: number;
+    hasCustomJson: boolean;
+  }>({
     keyframesJson: {
       "actions_sequence": ["A", "B", "C"],
       "keyframes": {
@@ -67,7 +80,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       })
       .then((data) => {
         if (data && data.actions_sequence && data.keyframes) {
-          animationState.current.keyframesJson = data as any;
+          animationState.current.keyframesJson = data as KeyframesJson;
           animationState.current.hasCustomJson = true;
           console.log(`Loaded bespoke JSON for ${fileName}`);
         }
@@ -139,14 +152,15 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     // Load Model
     const ext = fileName.split('.').pop()?.toLowerCase();
     
-    const onModelLoaded = (modelScene: THREE.Group, animations?: THREE.AnimationClip[], gltfData?: any) => {
+    const onModelLoaded = (modelScene: THREE.Group, animations?: THREE.AnimationClip[], gltfData?: unknown) => {
       setLoading(false);
       engineState.current.modelGroup = modelScene;
 
       // ─── Extract custom JSON config from GLB / glTF ───
-      let customConfig: any = null;
-      if (gltfData && gltfData.parser && gltfData.parser.json && gltfData.parser.json.extras && gltfData.parser.json.extras.animation_config) {
-        customConfig = gltfData.parser.json.extras.animation_config;
+      let customConfig: unknown = null;
+      const gltf = gltfData as { parser?: { json?: { extras?: { animation_config?: unknown } } } };
+      if (gltf?.parser?.json?.extras?.animation_config) {
+        customConfig = gltf.parser.json.extras.animation_config;
       } else if (modelScene.userData && modelScene.userData.animation_config) {
         customConfig = modelScene.userData.animation_config;
       }
@@ -164,7 +178,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
         try {
           const parsed = typeof customConfig === 'string' ? JSON.parse(customConfig) : customConfig;
           if (parsed && parsed.actions_sequence && parsed.keyframes) {
-            animationState.current.keyframesJson = parsed as any;
+            animationState.current.keyframesJson = parsed as KeyframesJson;
             animationState.current.hasCustomJson = true;
             console.log(`Loaded built-in animation_config from GLB!`);
           }
@@ -224,14 +238,14 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       loader.load(fileUrl, (usdGroup) => {
         // USDZLoader returns a Mesh; cast to Group since onModelLoaded only uses
         // Group-compatible APIs (position, Box3, scene.add, AnimationMixer).
-        onModelLoaded(usdGroup as unknown as THREE.Group, (usdGroup as any).animations || []);
+        onModelLoaded(usdGroup as unknown as THREE.Group, (usdGroup as { animations?: THREE.AnimationClip[] }).animations || []);
       }, undefined, (e) => {
         console.error(e);
         setLoading(false);
       });
     } else {
       // Fallback
-      setLoading(false);
+      setTimeout(() => setLoading(false), 0);
     }
 
     const createMockAnimations = (modelGroup: THREE.Group) => {
