@@ -69,7 +69,7 @@ export default function IOSARPage() {
     displayName: toDisplayName(file),
     category: toCategory(file),
     fileName: file,
-    fileUrl: `${process.env.NODE_ENV === 'production' ? '/ARInteractiveWebpage' : ''}/iOSARAssets/${file}`,
+    fileUrl: `/ARInteractiveWebpage/iOSARAssets/${file}`,
     accentColor: ACCENT_PALETTE[idx % ACCENT_PALETTE.length],
     index: idx,
   }));

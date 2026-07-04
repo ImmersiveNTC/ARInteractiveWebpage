@@ -6,9 +6,7 @@ import dynamic from 'next/dynamic';
 const I3DViewerModal = dynamic(() => import('./I3DViewerModal').then(mod => mod.I3DViewerModal), { 
   ssr: false,
   loading: () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm">
-      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm" />
   )
 });
 
@@ -28,6 +26,10 @@ export function I3DGalleryCard({ id, displayName, category, fileName, fileUrl, a
   const ext = (fileName.split('.').pop() || '').toLowerCase();
   const isGlb = ext === 'glb' || ext === 'gltf';
 
+  const preloadModal = () => {
+    import('./I3DViewerModal');
+  };
+
   return (
     <>
       <div
@@ -38,6 +40,8 @@ export function I3DGalleryCard({ id, displayName, category, fileName, fileUrl, a
           ['--i3d-accent' as string]: accentColor,
         }}
         onClick={() => setIsOpen(true)}
+        onMouseEnter={preloadModal}
+        onFocus={preloadModal}
       >
         {/* Accent gradient overlay */}
         <div className="i3d-card__accent" />

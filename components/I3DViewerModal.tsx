@@ -86,6 +86,13 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     // Scene
     const scene = new THREE.Scene();
 
+    // Camera orbit animation state
+    let orbitStartTime: number | null = null;
+    let isOrbitAnimating = false;
+    let orbitRadius = 4;
+    const orbitDuration = 1250; // 1.25 seconds
+    const orbitInitialAngle = 1.5; // matches the initial angle for the seamless loader transition
+
     // Camera
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
     camera.position.set(0, 0, 4);
@@ -94,8 +101,8 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     // Renderer
     const renderer = new THREE.WebGLRenderer({ canvas: canvasRef.current, antialias: true, alpha: true });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(0x000000, 0.5);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setClearColor(0x000000, 0);
     engineState.current.renderer = renderer;
 
     // Lights
@@ -116,6 +123,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     controls.dampingFactor = 0.05;
     controls.maxDistance = 10;
     controls.minDistance = 1.5;
+
 
     // Resize handler
     const handleResize = () => {
@@ -179,7 +187,17 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       engineState.current.modelGroup = wrapper;
 
       const maxDim = Math.max(size.x, size.y, size.z);
-      camera.position.z = maxDim * 1.8 || 4;
+      const radius = maxDim * 1.8 || 4;
+      
+      // Start camera at the initial rotated angle
+      camera.position.set(radius * Math.sin(orbitInitialAngle), 0, radius * Math.cos(orbitInitialAngle));
+      camera.lookAt(0, 0, 0);
+      controls.update();
+
+      // Setup orbit animation parameters
+      orbitRadius = radius;
+      orbitStartTime = performance.now();
+      isOrbitAnimating = true;
 
       // Setup animations
       if (animations && animations.length > 0) {
@@ -268,7 +286,29 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     // Render loop
     const animate = (time: number) => {
       requestAnimationFrame(animate);
-      controls.update();
+
+      // Programmatically animate camera orbit during the first second
+      if (isOrbitAnimating && orbitStartTime !== null) {
+        const elapsed = performance.now() - orbitStartTime;
+        if (elapsed >= orbitDuration) {
+          isOrbitAnimating = false;
+          camera.position.set(0, 0, orbitRadius);
+          camera.lookAt(0, 0, 0);
+          controls.update();
+        } else {
+          const t = elapsed / orbitDuration; // t goes from 0 to 1
+          // Cubic easing that starts 3x faster than loading cube rotational speed at t=0 and smoothly decelerates to 0 at t=1 (duration 1.25s)
+          const a = -0.064;
+          const b = 1.12;
+          const c = -2.5;
+          const d = 1.5;
+          const angle = a * Math.pow(t, 3) + b * Math.pow(t, 2) + c * t + d;
+          camera.position.set(orbitRadius * Math.sin(angle), 0, orbitRadius * Math.cos(angle));
+          camera.lookAt(0, 0, 0);
+        }
+      } else {
+        controls.update();
+      }
 
       const eng = engineState.current;
       const anim = animationState.current;
@@ -415,9 +455,9 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-10">
-      <div className="relative w-full h-full max-w-7xl max-h-[90vh] bg-neutral-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col">
+      <div className="relative w-full h-full max-w-7xl max-h-[90vh] bg-[#666666] rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col">
         {/* Header Bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20 relative z-20">
           <h2 className="text-lg font-medium text-white">{fileName}</h2>
           <button 
             onClick={onClose}
@@ -430,10 +470,19 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
         </div>
 
         {/* 3D Canvas Container */}
-        <div ref={containerRef} className="relative flex-1 w-full h-full bg-black/40">
+        <div ref={containerRef} className="relative flex-1 w-full h-full bg-transparent">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center bg-[#666666] z-10">
+              <div className="i3d-cube-wrap" style={{ transform: 'scale(3.75)' }}>
+                <div className="i3d-cube">
+                  <div className="i3d-cube__face i3d-cube__face--front" />
+                  <div className="i3d-cube__face i3d-cube__face--back" />
+                  <div className="i3d-cube__face i3d-cube__face--right" />
+                  <div className="i3d-cube__face i3d-cube__face--left" />
+                  <div className="i3d-cube__face i3d-cube__face--top" />
+                  <div className="i3d-cube__face i3d-cube__face--bottom" />
+                </div>
+              </div>
             </div>
           )}
           <canvas ref={canvasRef} className="w-full h-full outline-none" />
@@ -449,7 +498,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
           </div>
 
           {/* Controls Overlay */}
-          <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col gap-4">
+          <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-20">
             <button 
               onClick={toggleExplode}
               className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-indigo-500/20 hover:border-indigo-500/50 transition-all shadow-lg backdrop-blur-md"

@@ -116,7 +116,7 @@ export default function I3DPage() {
                 displayName={toDisplayName(file)}
                 category={toCategory(file)}
                 fileName={file}
-                fileUrl={`${process.env.NODE_ENV === 'production' ? '/ARInteractiveWebpage' : ''}/i3dAssets/${file}`}
+                fileUrl={`/ARInteractiveWebpage/i3dAssets/${file}`}
                 accentColor={ACCENT_PALETTE[idx % ACCENT_PALETTE.length]}
                 index={idx}
               />
