@@ -366,7 +366,12 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
   const navigateSequence = (direction: 'prev' | 'next') => {
     const anim = animationState.current;
     const eng = engineState.current;
-    if (anim.isPlaying) return;
+    
+    if (anim.isPlaying) {
+      // Mid-play skip: instantly jump the model to the target frame of the current action
+      setFrame(anim.targetFrame);
+      anim.isPlaying = false;
+    }
 
     if (anim.hasCustomJson && anim.keyframesJson.actions_sequence && anim.keyframesJson.actions_sequence.length > 0) {
       const seq = anim.keyframesJson.actions_sequence;
@@ -385,9 +390,15 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
 
       if (Array.isArray(range) && range.length === 2) {
         const [startFrame, endFrame] = range;
-        setFrame(startFrame);
-        anim.targetFrame = endFrame;
-        anim.playDirection = 1;
+        if (direction === 'next') {
+          setFrame(startFrame);
+          anim.targetFrame = endFrame;
+          anim.playDirection = 1;
+        } else {
+          setFrame(endFrame);
+          anim.targetFrame = startFrame;
+          anim.playDirection = -1;
+        }
         anim.isPlaying = true;
       }
     } else {
@@ -410,7 +421,6 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
   const toggleExplode = () => {
     const anim = animationState.current;
     const eng = engineState.current;
-    if (anim.isPlaying) return;
 
     let startFrame = 1;
     let endFrame = 100;
@@ -428,6 +438,18 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
           endFrame = clipFrames;
         }
       }
+    }
+
+    if (anim.isPlaying) {
+      // Mid-play reversal: flip the play direction and update the target frame to the opposite end of the range
+      if (anim.playDirection === 1) {
+        anim.playDirection = -1;
+        anim.targetFrame = startFrame;
+      } else {
+        anim.playDirection = 1;
+        anim.targetFrame = endFrame;
+      }
+      return;
     }
 
     const atStart = Math.abs(anim.currentFrame - startFrame) <= 0.5;
@@ -513,21 +535,21 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
             
             <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-white/10">
               <button 
-                onClick={() => navigateSequence('prev')}
-                className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all shadow-lg backdrop-blur-md"
-                title="Previous Sequence Action"
-              >
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="15 18 9 12 15 6"/>
-                </svg>
-              </button>
-              <button 
                 onClick={() => navigateSequence('next')}
                 className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all shadow-lg backdrop-blur-md"
                 title="Next Sequence Action"
               >
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 18 15 12 9 6"/>
+                </svg>
+              </button>
+              <button 
+                onClick={() => navigateSequence('prev')}
+                className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all shadow-lg backdrop-blur-md"
+                title="Previous Sequence Action"
+              >
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 18 9 12 15 6"/>
                 </svg>
               </button>
             </div>
