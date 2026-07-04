@@ -1060,8 +1060,8 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
 /* ---- Gallery Grid ---- */
 .iosar-gallery {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 20px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
 }
 
 @media (min-width: 640px) {
@@ -1560,5 +1560,59 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   .iosar-card {
     animation: none !important;
     opacity: 1;
+  }
+}
+
+/* Phone responsiveness: two cards per row and adjusted sizes */
+@media (max-width: 639px) {
+  .iosar-card {
+    border-radius: 16px;
+  }
+
+  .iosar-card__body {
+    padding: 16px;
+  }
+
+  .iosar-target {
+    transform: scale(0.6);
+    transform-origin: top left;
+    margin-bottom: -24px; /* Offset the height difference to align content: 60px * (1 - 0.6) = 24px */
+  }
+
+  .iosar-card__name {
+    font-size: 14px;
+    margin-top: 8px;
+    line-height: 1.25;
+  }
+
+  .iosar-card__category {
+    font-size: 8px;
+    margin-top: 3px;
+    letter-spacing: 0.05em;
+  }
+
+  .iosar-card__badge {
+    top: 8px;
+    right: 8px;
+    padding: 3px 7px;
+    font-size: 8px;
+    gap: 3px;
+  }
+
+  .iosar-card__badge-icon svg {
+    width: 8px;
+    height: 8px;
+  }
+
+  .iosar-card__cta {
+    bottom: 8px;
+    padding: 3px 8px;
+    font-size: 9px;
+    gap: 4px;
+  }
+
+  .iosar-card__cta svg {
+    width: 9px;
+    height: 9px;
   }
 }
