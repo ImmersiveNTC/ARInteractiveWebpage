@@ -10,20 +10,7 @@ export const metadata = {
 /* ─── Display Name & Category Mapping ──────────────────────────────────────── */
 
 function toDisplayName(filename: string): string {
-  const raw = filename.replace(/\.[^/.]+$/, '');
-  let name = raw
-    .replace(/_/g, ' ')
-    .replace(/\b3d\b/gi, '')
-    .replace(/\bprintable\b/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-
-  name = name
-    .split(' ')
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
-
-  return name || raw;
+  return filename.replace(/\.[^/.]+$/, '');
 }
 
 function toCategory(filename: string): string {
