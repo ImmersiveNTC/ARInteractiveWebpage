@@ -68,14 +68,26 @@ function VR360Card({ item, onClick }: { item: PanoramaData; onClick: (item: Pano
       {/* Pulsing glow ring on hover */}
       <div className="ar360-card__glow" style={{ background: item.accentColor }} />
 
+      {/* Card Thumbnail */}
+      <div className="ar360-card__thumbnail">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img 
+          src={item.fileUrl} 
+          alt={item.displayName}
+          loading="lazy"
+        />
+      </div>
+
       {/* Card body */}
       <div className="ar360-card__body">
         {/* Orbiting Sphere Icon */}
         <VR360SphereIcon accentColor={item.accentColor} />
 
-        {/* Panorama name + category */}
-        <h3 className="ar360-card__name">{item.displayName}</h3>
-        <p className="ar360-card__category">{item.category}</p>
+        <div>
+          {/* Panorama name + category */}
+          <h3 className="ar360-card__name">{item.displayName}</h3>
+          <p className="ar360-card__category">{item.category}</p>
+        </div>
       </div>
 
       {/* Format Badge */}
@@ -186,6 +198,7 @@ export function VR360Gallery({ items }: VR360GalleryProps) {
   const isMobile = useIsMobile();
   const [selectedItem, setSelectedItem] = useState<PanoramaData | null>(null);
   const [activeViewerItem, setActiveViewerItem] = useState<PanoramaData | null>(null);
+  const [gyroAllowed, setGyroAllowed] = useState(false);
   const [pageUrl, setPageUrl] = useState('');
 
   useEffect(() => {
@@ -194,8 +207,26 @@ export function VR360Gallery({ items }: VR360GalleryProps) {
     }, 0);
   }, []);
 
-  const handleCardClick = (item: PanoramaData) => {
+  const handleCardClick = async (item: PanoramaData) => {
     if (isMobile) {
+      // iOS 13+ device orientation permission request handshake on user interaction gesture
+      let allowed = false;
+      const DeviceOrientation = (window as any).DeviceOrientationEvent;
+      if (
+        typeof DeviceOrientation !== 'undefined' &&
+        typeof DeviceOrientation.requestPermission === 'function'
+      ) {
+        try {
+          const permissionState = await DeviceOrientation.requestPermission();
+          allowed = (permissionState === 'granted');
+        } catch (error) {
+          console.error('Error requesting orientation permission on user gesture:', error);
+        }
+      } else {
+        // Non-iOS mobile device (e.g. Android), where permission is implicitly granted by default
+        allowed = true;
+      }
+      setGyroAllowed(allowed);
       setActiveViewerItem(item);
     } else {
       setSelectedItem(item);
@@ -251,6 +282,7 @@ export function VR360Gallery({ items }: VR360GalleryProps) {
           pageUrl={pageUrl}
           onClose={() => setSelectedItem(null)}
           onLaunchPreview={() => {
+            setGyroAllowed(false); // Disable gyro tracking for desktop environment previews
             setActiveViewerItem(selectedItem);
             setSelectedItem(null);
           }}
@@ -262,6 +294,7 @@ export function VR360Gallery({ items }: VR360GalleryProps) {
         <VR360ViewerModal
           imageUrl={activeViewerItem.fileUrl}
           title={activeViewerItem.displayName}
+          initialGyroActive={gyroAllowed}
           onClose={() => setActiveViewerItem(null)}
         />
       )}

@@ -1676,8 +1676,22 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
 
 .ar360-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 32px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .ar360-gallery {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .ar360-gallery {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 28px;
+  }
 }
 
 .ar360-card {
@@ -1686,6 +1700,8 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   border-radius: 24px;
   overflow: hidden;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
 
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.07);
@@ -1747,24 +1763,44 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   opacity: 0.35;
 }
 
+.ar360-card__thumbnail {
+  width: 100%;
+  height: 50%;
+  overflow: hidden;
+  position: relative;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ar360-card__thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  transition: transform 600ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.ar360-card:hover .ar360-card__thumbnail img {
+  transform: scale(1.08);
+}
+
 .ar360-card__body {
   position: relative;
   z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
-  height: 100%;
-  padding: 32px;
+  justify-content: flex-start;
+  height: 50%;
+  padding: 20px 24px;
 }
 
 .ar360-card__name {
-  font-size: clamp(20px, 2.2vw, 26px);
+  font-size: clamp(16px, 1.8vw, 22px);
   font-weight: 600;
   letter-spacing: -0.025em;
   line-height: 1.2;
   color: rgba(255, 255, 255, 0.88);
-  margin-top: 20px;
+  margin-top: 10px;
   transition: color 200ms var(--app-ease);
 }
 
@@ -1778,7 +1814,7 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.3);
-  margin-top: 6px;
+  margin-top: 4px;
   transition: color 200ms var(--app-ease);
 }
 
@@ -1788,28 +1824,30 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
 
 .ar360-card__badge {
   position: absolute;
-  top: 24px;
-  right: 24px;
+  top: 16px;
+  right: 16px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 5px 11px;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.75);
   transition:
     background-color 300ms var(--app-ease),
     border-color 300ms var(--app-ease),
     color 300ms var(--app-ease);
   z-index: 5;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .ar360-card:hover .ar360-card__badge {
-  background: rgba(45, 212, 191, 0.12);
+  background: rgba(45, 212, 191, 0.2);
   border-color: rgba(45, 212, 191, 0.3);
   color: #2dd4bf;
 }
@@ -1822,8 +1860,8 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
 
 .ar360-card__cta {
   position: absolute;
-  bottom: 24px;
-  left: 32px;
+  bottom: 16px;
+  right: 16px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2079,24 +2117,24 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   }
 
   .ar360-card__body {
-    padding: 16px;
+    padding: 10px 12px;
   }
 
   .ar360-sphere-wrap {
-    transform: scale(0.6);
+    transform: scale(0.5);
     transform-origin: top left;
-    margin-bottom: -24px;
+    margin-bottom: -30px;
   }
 
   .ar360-card__name {
-    font-size: 14px;
-    margin-top: 8px;
-    line-height: 1.25;
+    font-size: 13px;
+    margin-top: 4px;
+    line-height: 1.2;
   }
 
   .ar360-card__category {
     font-size: 8px;
-    margin-top: 3px;
+    margin-top: 2px;
     letter-spacing: 0.05em;
   }
 
@@ -2110,8 +2148,9 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
 
   .ar360-card__cta {
     bottom: 8px;
+    right: 8px;
     padding: 3px 8px;
-    font-size: 9px;
+    font-size: 8px;
     gap: 4px;
   }
 }

@@ -6,18 +6,23 @@ import * as THREE from 'three';
 type VR360ViewerModalProps = {
   imageUrl: string;
   title: string;
+  initialGyroActive: boolean;
   onClose: () => void;
 };
 
-export function VR360ViewerModal({ imageUrl, title, onClose }: VR360ViewerModalProps) {
+export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }: VR360ViewerModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [gyroActive, setGyroActive] = useState(false);
+  const [gyroActive, setGyroActive] = useState(initialGyroActive);
   const [isMobileDevice, setIsMobileDevice] = useState(false);
   const [showInstructions, setShowInstructions] = useState(true);
+
+  useEffect(() => {
+    setGyroActive(initialGyroActive);
+  }, [initialGyroActive]);
 
   // References to pass state to animation loops and event handlers without re-triggering useEffect
   const stateRef = useRef({
@@ -260,8 +265,8 @@ export function VR360ViewerModal({ imageUrl, title, onClose }: VR360ViewerModalP
       // Panning side-to-side (alpha) rotates longitude (lon)
       // Tilting up-and-down (beta) rotates latitude (lat)
       // Multiple scales to tune sensor responsiveness
-      state.targetLon = state.gyroStartLon - deltaAlpha * 1.25;
-      state.targetLat = state.gyroStartLat + deltaBeta * 1.25;
+      state.targetLon = state.gyroStartLon + deltaAlpha * 1.25;
+      state.targetLat = state.gyroStartLat - deltaBeta * 1.25;
     };
 
     window.addEventListener('deviceorientation', handleOrientation, true);
@@ -270,40 +275,6 @@ export function VR360ViewerModal({ imageUrl, title, onClose }: VR360ViewerModalP
       window.removeEventListener('deviceorientation', handleOrientation, true);
     };
   }, [gyroActive]);
-
-  // Request iOS Gyroscope Permission
-  const toggleGyro = async () => {
-    if (gyroActive) {
-      setGyroActive(false);
-      return;
-    }
-
-    // Check for iOS 13+ device orientation permissions
-    const DeviceOrientation = window.DeviceOrientationEvent as unknown as {
-      requestPermission?: () => Promise<'granted' | 'denied'>;
-    };
-
-    if (
-      typeof window !== 'undefined' &&
-      typeof DeviceOrientation !== 'undefined' &&
-      typeof DeviceOrientation.requestPermission === 'function'
-    ) {
-      try {
-        const permissionState = await DeviceOrientation.requestPermission();
-        if (permissionState === 'granted') {
-          setGyroActive(true);
-        } else {
-          alert('Motion sensor permission was denied. Falling back to drag controls.');
-        }
-      } catch (error) {
-        console.error('Error requesting motion permission:', error);
-        alert('Could not enable motion controls on this device.');
-      }
-    } else {
-      // Non-iOS device or permission not required
-      setGyroActive(true);
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black overflow-hidden select-none">
@@ -357,68 +328,6 @@ export function VR360ViewerModal({ imageUrl, title, onClose }: VR360ViewerModalP
               <path d="M9 18l6-6-6-6" />
             </svg>
           </p>
-        </div>
-      )}
-
-      {/* ── Floating Controls Bar (Bottom Center) ── */}
-      {!isLoading && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex gap-4 items-center px-4 py-2.5 rounded-full bg-black/40 border border-white/10 backdrop-blur-md shadow-2xl">
-          
-          {/* Zoom In / Zoom Out Controls */}
-          <div className="flex items-center gap-1 border-r border-white/10 pr-3">
-            <button
-              onClick={() => {
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                if (!gl) return;
-                // Programmatic simulation of mouse wheel zoom-in
-                const container = containerRef.current;
-                if (container) {
-                  container.dispatchEvent(new WheelEvent('wheel', { deltaY: -150 }));
-                }
-              }}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 active:scale-90 transition-all cursor-pointer"
-              title="Zoom In"
-            >
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
-            <button
-              onClick={() => {
-                const container = containerRef.current;
-                if (container) {
-                  container.dispatchEvent(new WheelEvent('wheel', { deltaY: 150 }));
-                }
-              }}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 active:scale-90 transition-all cursor-pointer"
-              title="Zoom Out"
-            >
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Gyroscope toggle (visible on mobile, shown as optional on desktop fallback) */}
-          {(isMobileDevice || typeof window !== 'undefined' && 'DeviceOrientationEvent' in window) && (
-            <button
-              onClick={toggleGyro}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide border transition-all duration-300 cursor-pointer active:scale-95 ${
-                gyroActive 
-                  ? 'bg-teal-500/20 border-teal-500/40 text-teal-300 shadow-[0_0_12px_rgba(20,184,166,0.3)]' 
-                  : 'bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={gyroActive ? 'animate-pulse' : ''}>
-                <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
-                <line x1="12" y1="18" x2="12.01" y2="18" />
-              </svg>
-              {gyroActive ? 'Motion Control Active' : 'Enable Motion Control'}
-            </button>
-          )}
         </div>
       )}
     </div>
