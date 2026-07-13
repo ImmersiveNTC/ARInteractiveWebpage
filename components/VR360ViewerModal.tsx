@@ -35,10 +35,9 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
     onPointerDownPointerY: 0,
     onPointerDownLon: 0,
     onPointerDownLat: 0,
-    gyroStartLon: 0,
-    gyroStartLat: 0,
-    gyroStartAlpha: null as number | null,
-    gyroStartBeta: null as number | null,
+    gyroAlpha: null as number | null,
+    gyroBeta: null as number | null,
+    gyroGamma: null as number | null,
   });
 
   // Detect mobile device
@@ -187,21 +186,69 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
-      // Smooth interpolation (lerping)
-      state.lon += (state.targetLon - state.lon) * 0.15;
-      state.lat += (state.targetLat - state.lat) * 0.15;
-      state.lat = Math.max(-85, Math.min(85, state.lat)); // prevent flipping
+      if (gyroActive && state.gyroAlpha !== null && state.gyroBeta !== null && state.gyroGamma !== null) {
+        // 1. Convert absolute phone orientation angles to radians
+        const alphaRad = THREE.MathUtils.degToRad(state.gyroAlpha);
+        const betaRad = THREE.MathUtils.degToRad(state.gyroBeta);
+        const gammaRad = THREE.MathUtils.degToRad(state.gyroGamma);
 
-      // Convert Spherical coordinates to 3D Cartesian coordinates
-      const phi = THREE.MathUtils.degToRad(90 - state.lat);
-      const theta = THREE.MathUtils.degToRad(state.lon);
+        // 2. Create device quaternion with order 'YXZ' (yaw, pitch, roll)
+        const deviceEuler = new THREE.Euler(betaRad, alphaRad, -gammaRad, 'YXZ');
+        const deviceQuaternion = new THREE.Quaternion().setFromEuler(deviceEuler);
 
-      const target = new THREE.Vector3();
-      target.x = 500 * Math.sin(phi) * Math.sin(theta);
-      target.y = 500 * Math.cos(phi);
-      target.z = 500 * Math.sin(phi) * Math.cos(theta);
+        // 3. Compensate for screen orientation
+        let screenAngle = 0;
+        if (typeof window !== 'undefined') {
+          const win = window as any;
+          if ('orientation' in win) {
+            screenAngle = win.orientation || 0;
+          } else if (win.screen && win.screen.orientation) {
+            screenAngle = win.screen.orientation.angle || 0;
+          }
+        }
+        const screenOrientationRad = THREE.MathUtils.degToRad(screenAngle);
+        const screenQuaternion = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 0, 1),
+          -screenOrientationRad
+        );
 
-      camera.lookAt(target);
+        // 4. Align coordinate systems (Z-axis offset vs Y-axis in Three.js)
+        const worldAlignment = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(-Math.PI / 2, 0, 0)
+        );
+
+        // Combine base phone sensors rotation
+        const phoneQuaternion = worldAlignment.clone()
+          .multiply(deviceQuaternion)
+          .multiply(screenQuaternion);
+
+        // 5. Apply horizontal swipe/drag offset to allow turning around
+        state.lon += (state.targetLon - state.lon) * 0.15;
+        const dragQuaternion = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          THREE.MathUtils.degToRad(state.lon)
+        );
+
+        // Set absolute rotation to camera
+        camera.quaternion.copy(dragQuaternion).multiply(phoneQuaternion);
+
+      } else {
+        // Smooth Euler touch drag pan
+        state.lon += (state.targetLon - state.lon) * 0.15;
+        state.lat += (state.targetLat - state.lat) * 0.15;
+        state.lat = Math.max(-85, Math.min(85, state.lat)); // prevent flipping at poles
+
+        const phi = THREE.MathUtils.degToRad(90 - state.lat);
+        const theta = THREE.MathUtils.degToRad(state.lon);
+
+        const target = new THREE.Vector3();
+        target.x = 500 * Math.sin(phi) * Math.sin(theta);
+        target.y = 500 * Math.cos(phi);
+        target.z = 500 * Math.sin(phi) * Math.cos(theta);
+
+        camera.lookAt(target);
+      }
+
       renderer.render(scene, camera);
     };
 
@@ -231,42 +278,19 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
   // Handle Gyroscope Orientation Logic
   useEffect(() => {
     if (!gyroActive) {
-      // Clear values when gyro is disabled
-      stateRef.current.gyroStartAlpha = null;
-      stateRef.current.gyroStartBeta = null;
+      stateRef.current.gyroAlpha = null;
+      stateRef.current.gyroBeta = null;
+      stateRef.current.gyroGamma = null;
       return;
     }
 
     const state = stateRef.current;
     
     const handleOrientation = (event: DeviceOrientationEvent) => {
-      const alpha = event.alpha; // Yaw [0, 360]
-      const beta = event.beta;   // Pitch [-180, 180]
-      
-      if (alpha === null || beta === null) return;
-
-      // On first reading, calibrate and record the relative zero offset
-      if (state.gyroStartAlpha === null || state.gyroStartBeta === null) {
-        state.gyroStartAlpha = alpha;
-        state.gyroStartBeta = beta;
-        state.gyroStartLon = state.lon;
-        state.gyroStartLat = state.lat;
-        return;
-      }
-
-      // Calculate orientation changes relative to calibration values
-      let deltaAlpha = alpha - state.gyroStartAlpha;
-      if (deltaAlpha > 180) deltaAlpha -= 360;
-      if (deltaAlpha < -180) deltaAlpha += 360;
-
-      const deltaBeta = beta - state.gyroStartBeta;
-
-      // Map phone rotation:
-      // Panning side-to-side (alpha) rotates longitude (lon)
-      // Tilting up-and-down (beta) rotates latitude (lat)
-      // Multiple scales to tune sensor responsiveness
-      state.targetLon = state.gyroStartLon + deltaAlpha * 1.25;
-      state.targetLat = state.gyroStartLat + deltaBeta * 1.25;
+      // Feed raw orientations to render thread
+      state.gyroAlpha = event.alpha;
+      state.gyroBeta = event.beta;
+      state.gyroGamma = event.gamma;
     };
 
     window.addEventListener('deviceorientation', handleOrientation, true);
