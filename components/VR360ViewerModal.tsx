@@ -213,14 +213,15 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
         );
 
         // 4. Align coordinate systems (Z-axis offset vs Y-axis in Three.js)
-        const worldAlignment = new THREE.Quaternion().setFromEuler(
-          new THREE.Euler(-Math.PI / 2, 0, 0)
+        const worldAlignment = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(1, 0, 0),
+          -Math.PI / 2
         );
 
-        // Combine base phone sensors rotation
-        const phoneQuaternion = worldAlignment.clone()
-          .multiply(deviceQuaternion)
-          .multiply(screenQuaternion);
+        // Combine base phone sensors rotation in standard Three.js order: Device * Screen * WorldAlignment
+        const phoneQuaternion = deviceQuaternion.clone()
+          .multiply(screenQuaternion)
+          .multiply(worldAlignment);
 
         // 5. Apply horizontal swipe/drag offset to allow turning around
         state.lon += (state.targetLon - state.lon) * 0.15;
