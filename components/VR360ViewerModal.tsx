@@ -142,6 +142,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
     let touchStartDist = 0;
     const onTouchStart = (event: TouchEvent) => {
       if (event.touches.length === 2) {
+        event.preventDefault(); // Prevent browser viewport zooming
         const dx = event.touches[0].clientX - event.touches[1].clientX;
         const dy = event.touches[0].clientY - event.touches[1].clientY;
         touchStartDist = Math.sqrt(dx * dx + dy * dy);
@@ -150,6 +151,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
 
     const onTouchMove = (event: TouchEvent) => {
       if (event.touches.length === 2 && touchStartDist > 0) {
+        event.preventDefault(); // Prevent browser viewport zooming
         const dx = event.touches[0].clientX - event.touches[1].clientX;
         const dy = event.touches[0].clientY - event.touches[1].clientY;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -166,8 +168,8 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
     container.addEventListener('pointermove', onPointerMove);
     container.addEventListener('pointerup', onPointerUp);
     container.addEventListener('wheel', onDocumentMouseWheel, { passive: true });
-    container.addEventListener('touchstart', onTouchStart, { passive: true });
-    container.addEventListener('touchmove', onTouchMove, { passive: true });
+    container.addEventListener('touchstart', onTouchStart, { passive: false });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
 
     // 7. Resize Event
     const onWindowResize = () => {
@@ -308,6 +310,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
       <div 
         ref={containerRef} 
         className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"
+        style={{ touchAction: 'none' }}
       >
         <canvas ref={canvasRef} className="w-full h-full block" />
       </div>
