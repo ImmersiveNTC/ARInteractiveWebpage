@@ -266,7 +266,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
       // Tilting up-and-down (beta) rotates latitude (lat)
       // Multiple scales to tune sensor responsiveness
       state.targetLon = state.gyroStartLon + deltaAlpha * 1.25;
-      state.targetLat = state.gyroStartLat - deltaBeta * 1.25;
+      state.targetLat = state.gyroStartLat + deltaBeta * 1.25;
     };
 
     window.addEventListener('deviceorientation', handleOrientation, true);
