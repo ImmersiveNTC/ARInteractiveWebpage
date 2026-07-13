@@ -1616,3 +1616,503 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
     height: 9px;
   }
 }
+
+/* ==========================================================================
+   AR360 Gallery — Scoped Styles
+   ========================================================================== */
+
+.ar360-header__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: rgba(45, 212, 191, 0.1);
+  border: 1px solid rgba(45, 212, 191, 0.25);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2dd4bf;
+  margin-bottom: 20px;
+}
+
+.ar360-header__eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #2dd4bf;
+  box-shadow: 0 0 8px #2dd4bf;
+  animation: ar360-pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes ar360-pulse-dot {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+
+.ar360-header__title {
+  font-size: clamp(36px, 5vw, 62px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+
+.ar360-header__title span {
+  display: block;
+  background: linear-gradient(to right, #2dd4bf, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ar360-header__sub {
+  font-size: clamp(16px, 1.8vw, 19px);
+  color: rgba(255, 255, 255, 0.55);
+  max-w: 680px;
+  line-height: 1.6;
+}
+
+.ar360-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 32px;
+}
+
+.ar360-card {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: 24px;
+  overflow: hidden;
+  cursor: pointer;
+
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+
+  transition:
+    transform 420ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 320ms var(--app-ease),
+    box-shadow 420ms cubic-bezier(0.23, 1, 0.32, 1);
+
+  opacity: 0;
+  animation: ar360-card-in 650ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+.ar360-card:hover {
+  transform: translateY(-8px) scale(1.018);
+  border-color: rgba(45, 212, 191, 0.25);
+  box-shadow:
+    0 28px 56px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(45, 212, 191, 0.08),
+    0 0 40px -8px var(--ar360-accent, rgba(45, 212, 191, 0.3));
+}
+
+.ar360-card__accent {
+  position: absolute;
+  inset: 0;
+  opacity: 0.1;
+  background: radial-gradient(
+    ellipse 130% 100% at 25% 115%,
+    var(--ar360-accent, rgba(45, 212, 191, 0.8)),
+    transparent 65%
+  );
+  transition: opacity 400ms var(--app-ease);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ar360-card:hover .ar360-card__accent {
+  opacity: 0.22;
+}
+
+.ar360-card__glow {
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 60px;
+  border-radius: 50%;
+  opacity: 0;
+  filter: blur(28px);
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 500ms var(--app-ease);
+}
+
+.ar360-card:hover .ar360-card__glow {
+  opacity: 0.35;
+}
+
+.ar360-card__body {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  height: 100%;
+  padding: 32px;
+}
+
+.ar360-card__name {
+  font-size: clamp(20px, 2.2vw, 26px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.88);
+  margin-top: 20px;
+  transition: color 200ms var(--app-ease);
+}
+
+.ar360-card:hover .ar360-card__name {
+  color: rgba(255, 255, 255, 1);
+}
+
+.ar360-card__category {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 6px;
+  transition: color 200ms var(--app-ease);
+}
+
+.ar360-card:hover .ar360-card__category {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.ar360-card__badge {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.7);
+  transition:
+    background-color 300ms var(--app-ease),
+    border-color 300ms var(--app-ease),
+    color 300ms var(--app-ease);
+  z-index: 5;
+}
+
+.ar360-card:hover .ar360-card__badge {
+  background: rgba(45, 212, 191, 0.12);
+  border-color: rgba(45, 212, 191, 0.3);
+  color: #2dd4bf;
+}
+
+.ar360-card__badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ar360-card__cta {
+  position: absolute;
+  bottom: 24px;
+  left: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.6);
+  transform: translateY(4px);
+  opacity: 0;
+  transition:
+    transform 350ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 300ms var(--app-ease),
+    background-color 200ms var(--app-ease),
+    color 200ms var(--app-ease);
+  z-index: 5;
+}
+
+.ar360-card:hover .ar360-card__cta {
+  transform: translateY(0);
+  opacity: 1;
+  background: rgba(45, 212, 191, 0.1);
+  border-color: rgba(45, 212, 191, 0.2);
+  color: #2dd4bf;
+}
+
+/* ---- Relative Sphere Icon ---- */
+.ar360-sphere-wrap {
+  perspective: 200px;
+  width: 60px;
+  height: 60px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ar360-sphere {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0.45));
+  box-shadow: 0 0 16px var(--ar360-accent, rgba(45, 212, 191, 0.4));
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  position: relative;
+  transform-style: preserve-3d;
+  animation: ar360-sphere-pulse 2s ease-in-out infinite alternate;
+}
+
+.ar360-sphere__orbit {
+  position: absolute;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  left: -8px;
+  top: -8px;
+  right: -8px;
+  bottom: -8px;
+  transform-style: preserve-3d;
+  animation: ar360-orbit-spin 6s linear infinite;
+  pointer-events: none;
+}
+
+.ar360-sphere__orbit--vertical {
+  animation: ar360-orbit-spin-vertical 8s linear infinite;
+}
+
+.ar360-card:hover .ar360-sphere {
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 24px var(--ar360-accent, rgba(45, 212, 191, 0.6));
+}
+
+.ar360-card:hover .ar360-sphere__orbit {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+@keyframes ar360-card-in {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ar360-sphere-pulse {
+  0% { transform: scale(0.92); }
+  100% { transform: scale(1.08); }
+}
+
+@keyframes ar360-orbit-spin {
+  0% { transform: rotateY(0deg) rotateX(15deg); }
+  100% { transform: rotateY(360deg) rotateX(15deg); }
+}
+
+@keyframes ar360-orbit-spin-vertical {
+  0% { transform: rotateX(0deg) rotateY(75deg); }
+  100% { transform: rotateX(360deg) rotateY(75deg); }
+}
+
+/* Modal and layout styling */
+.ar360-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 4, 26, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+
+.ar360-modal {
+  background: linear-gradient(135deg, rgba(20, 10, 40, 0.7), rgba(10, 5, 25, 0.9));
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  border-radius: 32px;
+  width: 100%;
+  max-width: 460px;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  box-shadow: 
+    0 30px 60px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(45, 212, 191, 0.05);
+  animation: ar360-modal-in 450ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes ar360-modal-in {
+  0% { opacity: 0; transform: scale(0.95) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.ar360-modal__close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: all 200ms var(--app-ease);
+}
+
+.ar360-modal__close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  transform: rotate(90deg);
+}
+
+.ar360-modal__icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: rgba(45, 212, 191, 0.1);
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2dd4bf;
+  margin-bottom: 24px;
+}
+
+.ar360-modal__title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.ar360-modal__model {
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(45, 212, 191, 0.9);
+  margin-bottom: 16px;
+}
+
+.ar360-modal__sub {
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.5);
+  max-w: 320px;
+  margin-bottom: 28px;
+}
+
+.ar360-modal__qr {
+  background: #ffffff;
+  padding: 12px;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  margin-bottom: 24px;
+  transition: transform 300ms var(--app-ease);
+}
+
+.ar360-modal__qr:hover {
+  transform: scale(1.03);
+}
+
+.ar360-modal__url {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  font-family: monospace;
+  word-break: break-all;
+  max-width: 280px;
+  margin-bottom: 24px;
+}
+
+.ar360-modal__preview-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0f766e, #0d9488);
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 250ms var(--app-ease);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.2);
+}
+
+.ar360-modal__preview-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(13, 148, 136, 0.4);
+  background: linear-gradient(135deg, #0d9488, #14b8a6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ar360-sphere, .ar360-sphere__orbit, .ar360-header__eyebrow-dot {
+    animation: none !important;
+  }
+  .ar360-card {
+    animation: none !important;
+    opacity: 1;
+  }
+}
+
+/* Phone responsiveness for AR360 gallery cards */
+@media (max-width: 639px) {
+  .ar360-card {
+    border-radius: 16px;
+  }
+
+  .ar360-card__body {
+    padding: 16px;
+  }
+
+  .ar360-sphere-wrap {
+    transform: scale(0.6);
+    transform-origin: top left;
+    margin-bottom: -24px;
+  }
+
+  .ar360-card__name {
+    font-size: 14px;
+    margin-top: 8px;
+    line-height: 1.25;
+  }
+
+  .ar360-card__category {
+    font-size: 8px;
+    margin-top: 3px;
+    letter-spacing: 0.05em;
+  }
+
+  .ar360-card__badge {
+    top: 8px;
+    right: 8px;
+    padding: 3px 7px;
+    font-size: 8px;
+    gap: 3px;
+  }
+
+  .ar360-card__cta {
+    bottom: 8px;
+    padding: 3px 8px;
+    font-size: 9px;
+    gap: 4px;
+  }
+}
+

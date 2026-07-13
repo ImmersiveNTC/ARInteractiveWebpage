@@ -270,6 +270,7 @@ function DesktopModal({ model, pageUrl, onClose }: { model: ModelData; pageUrl: 
 /* ─── Main Gallery Component ─────────────────────────────────────────────── */
 
 import Link from 'next/link';
+import { GalleryNav } from '../../components/GalleryNav';
 
 export function IOSARGallery({ models }: IOSARGalleryProps) {
   const isIOS = useIsIOS();
@@ -283,28 +284,9 @@ export function IOSARGallery({ models }: IOSARGalleryProps) {
   }, []);
 
   return (
-    <div className="app-page min-h-screen text-white font-sans">
-      <main className="mx-auto w-full max-w-7xl px-6 py-24 md:py-32">
-        {/* ── Switch to 3D Gallery Button ── */}
-        <Link 
-          href="/i3d" 
-          className="inline-flex items-center gap-3 px-4 py-2 mb-10 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all text-sm text-white/70 hover:text-white group w-fit"
-        >
-          <div className="w-5 h-5 flex items-center justify-center relative" style={{ ['--i3d-accent' as string]: 'rgba(138, 86, 255, 0.8)' }}>
-            <div className="i3d-cube-wrap" style={{ transform: 'scale(0.4)', transformOrigin: 'center', marginBottom: 0 }}>
-              <div className="i3d-cube">
-                <div className="i3d-cube__face i3d-cube__face--front" />
-                <div className="i3d-cube__face i3d-cube__face--back" />
-                <div className="i3d-cube__face i3d-cube__face--right" />
-                <div className="i3d-cube__face i3d-cube__face--left" />
-                <div className="i3d-cube__face i3d-cube__face--top" />
-                <div className="i3d-cube__face i3d-cube__face--bottom" />
-              </div>
-            </div>
-          </div>
-          Switch to 3D Gallery
-        </Link>
-
+    <div className="app-page min-h-screen text-white font-sans flex flex-col">
+      <GalleryNav activePage="iosar" />
+      <main className="mx-auto w-full max-w-7xl px-6 pt-12 pb-24 md:pt-16 md:pb-32 flex-1">
         {/* ── Header ── */}
         <header className="mb-16">
           <div className="iosar-header__eyebrow">

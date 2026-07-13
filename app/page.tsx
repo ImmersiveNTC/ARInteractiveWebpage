@@ -29,13 +29,13 @@ export default function Home() {
         </p>
       </header>
 
-      {/* The Two Main Cards */}
-      <div className="flex flex-col md:flex-row gap-8 w-full max-w-4xl mb-16 relative z-10">
+      {/* The Three Main Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl mb-16 relative z-10">
         
         {/* Interactive 3D Gallery Card */}
         <Link 
           href="/i3d" 
-          className="flex-1 group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10 hover:border-white/20 hover:-translate-y-1"
+          className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10 hover:border-white/20 hover:-translate-y-1"
         >
           <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative z-10 flex flex-col items-center text-center h-full">
@@ -61,7 +61,7 @@ export default function Home() {
         {/* AR Gallery Card */}
         <Link 
           href="/iosar" 
-          className="flex-1 group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10 hover:border-white/20 hover:-translate-y-1"
+          className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10 hover:border-white/20 hover:-translate-y-1"
         >
           <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative z-10 flex flex-col items-center text-center h-full">
@@ -80,6 +80,27 @@ export default function Home() {
             <h2 className="text-2xl font-bold mb-3 text-white">AR gallery</h2>
             <p className="text-white/60">
               Launch models into your physical space using Augmented Reality on iOS devices.
+            </p>
+          </div>
+        </Link>
+
+        {/* AR 360 Gallery Card */}
+        <Link 
+          href="/ar360" 
+          className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10 hover:border-white/20 hover:-translate-y-1"
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-teal-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex flex-col items-center text-center h-full">
+            <div className="w-20 h-20 mb-6 flex items-center justify-center relative">
+              <div className="ar360-sphere-wrap" aria-hidden="true" style={{ transform: 'scale(1)' }}>
+                <div className="ar360-sphere" style={{ ['--ar360-accent' as string]: 'rgba(45, 212, 191, 0.85)' }} />
+                <div className="ar360-sphere__orbit" style={{ borderColor: 'rgba(45, 212, 191, 0.85)' }} />
+                <div className="ar360-sphere__orbit ar360-sphere__orbit--vertical" style={{ borderColor: 'rgba(45, 212, 191, 0.85)' }} />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold mb-3 text-white">AR 360 gallery</h2>
+            <p className="text-white/60">
+              Immerse yourself in spherical environments using touch or mobile sensors.
             </p>
           </div>
         </Link>
