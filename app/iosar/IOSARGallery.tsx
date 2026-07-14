@@ -297,9 +297,7 @@ export function IOSARGallery({ models }: IOSARGalleryProps) {
             AR Gallery
           </h1>
           <p className="iosar-header__sub">
-            Tap any model to launch it in{' '}
-            <strong>Augmented Reality</strong> through your iPhone camera.
-            Powered by Apple AR Quick Look.
+            Tap any model to launch into the real world using augmented reality on your Apple device. Make sure to scan the floor evenly, rather than too high or too low.
           </p>
 
           {/* Device indicator banner */}

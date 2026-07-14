@@ -53,7 +53,7 @@ export default function Home() {
             </div>
             <h2 className="text-2xl font-bold mb-3 text-white">Interactive 3D gallery</h2>
             <p className="text-white/60">
-              Explore and interact with high-fidelity 3D models directly in your browser.
+              Explore and interact with high-fidelity 3D models.
             </p>
           </div>
         </Link>
@@ -79,7 +79,7 @@ export default function Home() {
             </div>
             <h2 className="text-2xl font-bold mb-3 text-white">AR gallery</h2>
             <p className="text-white/60">
-              Launch models into your physical space using Augmented Reality on iOS devices.
+              Launch models into the real environment using augmented reality.
             </p>
           </div>
         </Link>

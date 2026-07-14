@@ -84,7 +84,7 @@ export default function I3DPage() {
             Interactive 3D Gallery
           </h1>
           <p className="i3d-header__sub">
-            Explore interactive 3D models. Click any card to open the viewer.
+            3D models that you can rotate, scale, and explore.
           </p>
         </header>
 

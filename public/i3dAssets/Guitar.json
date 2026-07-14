@@ -1,0 +1,8 @@
+{
+  "actions_sequence": ["A"],
+  "keyframes": {
+    "W": 0,
+    "A": [1, 60],
+    "W2E": [96, 130]
+  }
+}
