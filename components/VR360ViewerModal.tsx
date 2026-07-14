@@ -301,7 +301,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
           -Math.PI / 2
         );
 
-        // 3. Compensate for screen orientation
+        // 3. Get screen orientation
         let screenAngle = 0;
         if (typeof window !== 'undefined') {
           const win = window as any;
@@ -318,14 +318,8 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
           
           state.lastScreenAngle = screenAngle;
           
-          const screenOrientationRadNew = THREE.MathUtils.degToRad(screenAngle);
-          const screenQuaternionNew = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 0, 1),
-            -screenOrientationRadNew
-          );
-          
+          // Calculate the phone orientation without screen rotation (since iOS Safari auto-rotates sensor data)
           const phoneQuaternionNew = deviceQuaternion.clone()
-            .multiply(screenQuaternionNew)
             .multiply(worldAlignment);
             
           const Q_drag_new = Q_old.clone().multiply(phoneQuaternionNew.clone().invert());
@@ -335,17 +329,8 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
           state.targetLon = state.lon;
         }
 
-        const screenOrientationRad = THREE.MathUtils.degToRad(screenAngle);
-        const screenQuaternion = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 0, 1),
-          -screenOrientationRad
-        );
-
-        // 4. Already aligned with worldAlignment above
-
-        // Combine base phone sensors rotation in standard Three.js order: Device * Screen * WorldAlignment
+        // Calculate the base phone sensors rotation relative to the screen (excluding screenQuaternion to avoid double compensation)
         const phoneQuaternion = deviceQuaternion.clone()
-          .multiply(screenQuaternion)
           .multiply(worldAlignment);
 
         // 5. Apply horizontal swipe/drag offset to allow turning around
