@@ -267,16 +267,18 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
     container.addEventListener('touchend', onTouchEnd);
     container.addEventListener('touchcancel', onTouchEnd);
 
-    // 7. Resize Event
-    const onWindowResize = () => {
+    // 7. Resize Observer
+    const resizeObserver = new ResizeObserver(() => {
       if (!containerRef.current) return;
-      width = containerRef.current.clientWidth;
-      height = containerRef.current.clientHeight;
-      camera.aspect = width / height;
+      const w = containerRef.current.clientWidth;
+      const h = containerRef.current.clientHeight;
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-    };
-    window.addEventListener('resize', onWindowResize);
+      renderer.setSize(w, h);
+    });
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
 
     // 8. Animation & Render Loop
     let animationFrameId: number;
@@ -357,7 +359,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
     // Cleanup function
     return () => {
       cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', onWindowResize);
+      resizeObserver.disconnect();
       
       if (container) {
         container.removeEventListener('pointerdown', onPointerDown);
