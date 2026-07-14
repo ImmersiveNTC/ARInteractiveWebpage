@@ -192,44 +192,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       }
       // ──────────────────────────────────────────────────
 
-      // Setup animations FIRST
-      if (animations && animations.length > 0) {
-        engineState.current.mixer = new THREE.AnimationMixer(modelScene);
-        
-        // Find minimum start offset across all tracks of all clips
-        let absoluteMin = Infinity;
-        animations.forEach(clip => {
-          clip.tracks.forEach(track => {
-            if (track.times && track.times.length > 0) {
-              absoluteMin = Math.min(absoluteMin, track.times[0]);
-            }
-          });
-        });
-        engineState.current.minTime = absoluteMin !== Infinity ? absoluteMin : 0;
-
-        // Bind and play all animation clips in the mixer
-        engineState.current.actions = animations.map(clip => {
-          const action = engineState.current.mixer!.clipAction(clip);
-          action.play();
-          action.paused = true;
-          return action;
-        });
-        engineState.current.action = engineState.current.actions[0]; // fallback
-        
-        // Force evaluation of initial pose (frame 0) so the model is posed correctly before box calculation
-        const initialTime = engineState.current.minTime;
-        engineState.current.actions.forEach(action => {
-          action.paused = false;
-          action.time = initialTime;
-        });
-        engineState.current.mixer.update(0);
-        animationState.current.currentFrame = 0;
-      } else {
-        engineState.current.minTime = 0;
-        createMockAnimations(modelScene);
-      }
-
-      // Center model based on the POSED dimensions
+      // Center model
       const box = new THREE.Box3().setFromObject(modelScene);
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
@@ -253,6 +216,35 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       orbitRadius = radius;
       orbitStartTime = performance.now();
       isOrbitAnimating = true;
+
+      // Setup animations
+      if (animations && animations.length > 0) {
+        engineState.current.mixer = new THREE.AnimationMixer(wrapper);
+        
+        // Find minimum start offset across all tracks of all clips
+        let absoluteMin = Infinity;
+        animations.forEach(clip => {
+          clip.tracks.forEach(track => {
+            if (track.times && track.times.length > 0) {
+              absoluteMin = Math.min(absoluteMin, track.times[0]);
+            }
+          });
+        });
+        engineState.current.minTime = absoluteMin !== Infinity ? absoluteMin : 0;
+
+        // Bind and play all animation clips in the mixer
+        engineState.current.actions = animations.map(clip => {
+          const action = engineState.current.mixer!.clipAction(clip);
+          action.play();
+          action.paused = true;
+          return action;
+        });
+        engineState.current.action = engineState.current.actions[0]; // fallback
+        setFrame(0);
+      } else {
+        engineState.current.minTime = 0;
+        createMockAnimations(wrapper);
+      }
     };
 
     if (ext === 'gltf' || ext === 'glb') {
