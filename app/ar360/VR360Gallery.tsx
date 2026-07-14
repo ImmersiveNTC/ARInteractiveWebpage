@@ -279,7 +279,7 @@ export function VR360Gallery({ items }: VR360GalleryProps) {
             Mobile 360 Experience
           </div>
           <h1 className="ar360-header__title">
-            AR 360 <span>Gallery</span>
+            360° <span>Gallery</span>
           </h1>
           <p className="ar360-header__sub">
             Step inside detailed 360° environments. Look around using your phone&apos;s 
@@ -303,7 +303,7 @@ export function VR360Gallery({ items }: VR360GalleryProps) {
             <div className="text-5xl mb-6">🌐</div>
             <h2 className="text-2xl font-medium text-white/70">No 360 Images Found</h2>
             <p className="mt-4 text-white/40 max-w-md">
-              Add 360 equirectangular images (.jpg, .jpeg, .png, .webp) to the <code className="text-teal-400/70">public/VR360Assets</code> directory.
+              Add 360 equirectangular images (.jpg, .jpeg, .png, .webp) to the <code className="text-teal-400/70">public/AR360Assets</code> directory.
             </p>
           </div>
         )}

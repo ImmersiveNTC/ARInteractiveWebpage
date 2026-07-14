@@ -3,7 +3,7 @@ import path from 'path';
 import { VR360Gallery } from './VR360Gallery';
 
 export const metadata = {
-  title: "AR 360 Gallery",
+  title: "360° Gallery",
   description: "Experience immersive 360-degree spherical environments. Tap any panorama to step inside directly from your device.",
 };
 
@@ -49,7 +49,7 @@ const ACCENT_PALETTE = [
 /* ─── Page Component ─────────────────────────────────────────────────────── */
 
 export default function AR360Page() {
-  const assetsDir = path.join(process.cwd(), 'public/VR360Assets');
+  const assetsDir = path.join(process.cwd(), 'public/AR360Assets');
   let files: string[] = [];
   try {
     if (fs.existsSync(assetsDir)) {
@@ -71,7 +71,7 @@ export default function AR360Page() {
       });
     }
   } catch (error) {
-    console.error('Error reading VR360Assets directory:', error);
+    console.error('Error reading AR360Assets directory:', error);
   }
 
   const items = files.map((file, idx) => {
@@ -79,11 +79,11 @@ export default function AR360Page() {
     const isVideo = ['.mp4', '.mov', '.webm'].includes(ext);
     
     return {
-      id: `vr360-asset-${idx}`,
+      id: `ar360-asset-${idx}`,
       displayName: toDisplayName(file),
       category: isVideo ? '360° Video' : toCategory(file),
       fileName: file,
-      fileUrl: `/ARInteractiveWebpage/VR360Assets/${file}`,
+      fileUrl: `/ARInteractiveWebpage/AR360Assets/${file}`,
       accentColor: ACCENT_PALETTE[idx % ACCENT_PALETTE.length],
       index: idx,
       isVideo,

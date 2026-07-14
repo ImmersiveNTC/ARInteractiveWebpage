@@ -98,9 +98,9 @@ export default function Home() {
                 <div className="ar360-sphere__orbit ar360-sphere__orbit--vertical" style={{ borderColor: 'rgba(45, 212, 191, 0.85)' }} />
               </div>
             </div>
-            <h2 className="text-2xl font-bold mb-3 text-white">AR 360 gallery</h2>
+            <h2 className="text-2xl font-bold mb-3 text-white">360° gallery</h2>
             <p className="text-white/60">
-              Immerse yourself in spherical environments using touch or mobile sensors.
+              Immerse yourself in 360° environments using your smart phone.
             </p>
           </div>
         </Link>
