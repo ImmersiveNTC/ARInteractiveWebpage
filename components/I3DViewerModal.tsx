@@ -314,12 +314,17 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     const setFrame = (frameNumber: number) => {
       const eng = engineState.current;
       if (eng.mixer) {
+        const time = eng.minTime + frameNumber / 30;
         if (eng.actions) {
-          eng.actions.forEach(action => { action.paused = false; });
+          eng.actions.forEach(action => {
+            action.paused = false;
+            action.time = time;
+          });
         } else if (eng.action) {
           eng.action.paused = false;
+          eng.action.time = time;
         }
-        eng.mixer.setTime(eng.minTime + frameNumber / 30);
+        eng.mixer.update(0);
         animationState.current.currentFrame = frameNumber;
       }
     };
@@ -376,12 +381,17 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
           anim.currentFrame = nextFrame;
 
           if (eng.mixer) {
+            const frameTime = eng.minTime + anim.currentFrame / 30;
             if (eng.actions) {
-              eng.actions.forEach(action => { action.paused = false; });
+              eng.actions.forEach(action => {
+                action.paused = false;
+                action.time = frameTime;
+              });
             } else if (eng.action) {
               eng.action.paused = false;
+              eng.action.time = frameTime;
             }
-            eng.mixer.setTime(eng.minTime + anim.currentFrame / 30);
+            eng.mixer.update(0);
           }
         }
       }
@@ -402,12 +412,17 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     const eng = engineState.current;
     const anim = animationState.current;
     if (eng.mixer) {
+      const time = eng.minTime + frameNumber / 30;
       if (eng.actions) {
-        eng.actions.forEach(action => { action.paused = false; });
+        eng.actions.forEach(action => {
+          action.paused = false;
+          action.time = time;
+        });
       } else if (eng.action) {
         eng.action.paused = false;
+        eng.action.time = time;
       }
-      eng.mixer.setTime(eng.minTime + frameNumber / 30);
+      eng.mixer.update(0);
       anim.currentFrame = frameNumber;
     }
   };
