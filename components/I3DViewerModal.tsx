@@ -53,6 +53,8 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
   const engineState = useRef<{
     mixer: THREE.AnimationMixer | null;
     action: THREE.AnimationAction | null;
+    actions: THREE.AnimationAction[] | null;
+    minTime: number;
     modelGroup: THREE.Group | null;
     camera: THREE.PerspectiveCamera | null;
     renderer: THREE.WebGLRenderer | null;
@@ -62,6 +64,8 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
   }>({
     mixer: null,
     action: null,
+    actions: null,
+    minTime: 0,
     modelGroup: null,
     camera: null,
     renderer: null,
@@ -216,11 +220,29 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       // Setup animations
       if (animations && animations.length > 0) {
         engineState.current.mixer = new THREE.AnimationMixer(wrapper);
-        engineState.current.action = engineState.current.mixer.clipAction(animations[0]);
-        engineState.current.action.play();
-        engineState.current.action.paused = true;
+        
+        // Find minimum start offset across all tracks of all clips
+        let absoluteMin = Infinity;
+        animations.forEach(clip => {
+          clip.tracks.forEach(track => {
+            if (track.times && track.times.length > 0) {
+              absoluteMin = Math.min(absoluteMin, track.times[0]);
+            }
+          });
+        });
+        engineState.current.minTime = absoluteMin !== Infinity ? absoluteMin : 0;
+
+        // Bind and play all animation clips in the mixer
+        engineState.current.actions = animations.map(clip => {
+          const action = engineState.current.mixer!.clipAction(clip);
+          action.play();
+          action.paused = true;
+          return action;
+        });
+        engineState.current.action = engineState.current.actions[0]; // fallback
         setFrame(0);
       } else {
+        engineState.current.minTime = 0;
         createMockAnimations(wrapper);
       }
     };
@@ -290,9 +312,14 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     };
 
     const setFrame = (frameNumber: number) => {
-      if (engineState.current.action && engineState.current.mixer) {
-        engineState.current.action.paused = false;
-        engineState.current.mixer.setTime(frameNumber / 30);
+      const eng = engineState.current;
+      if (eng.mixer) {
+        if (eng.actions) {
+          eng.actions.forEach(action => { action.paused = false; });
+        } else if (eng.action) {
+          eng.action.paused = false;
+        }
+        eng.mixer.setTime(eng.minTime + frameNumber / 30);
         animationState.current.currentFrame = frameNumber;
       }
     };
@@ -348,9 +375,13 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
           }
           anim.currentFrame = nextFrame;
 
-          if (eng.action && eng.mixer) {
-            eng.action.paused = false;
-            eng.mixer.setTime(anim.currentFrame / 30);
+          if (eng.mixer) {
+            if (eng.actions) {
+              eng.actions.forEach(action => { action.paused = false; });
+            } else if (eng.action) {
+              eng.action.paused = false;
+            }
+            eng.mixer.setTime(eng.minTime + anim.currentFrame / 30);
           }
         }
       }
@@ -370,9 +401,13 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
   const setFrame = (frameNumber: number) => {
     const eng = engineState.current;
     const anim = animationState.current;
-    if (eng.action && eng.mixer) {
-      eng.action.paused = false;
-      eng.mixer.setTime(frameNumber / 30);
+    if (eng.mixer) {
+      if (eng.actions) {
+        eng.actions.forEach(action => { action.paused = false; });
+      } else if (eng.action) {
+        eng.action.paused = false;
+      }
+      eng.mixer.setTime(eng.minTime + frameNumber / 30);
       anim.currentFrame = frameNumber;
     }
   };
@@ -417,10 +452,16 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       }
     } else {
       let clipMax = 100;
-      if (eng.action) {
-        const clipFrames = Math.floor(eng.action.getClip().duration * 30);
-        if (clipFrames > 0) clipMax = clipFrames;
+      let maxDuration = 0;
+      if (eng.actions && eng.actions.length > 0) {
+        eng.actions.forEach(act => {
+          maxDuration = Math.max(maxDuration, act.getClip().duration);
+        });
+      } else if (eng.action) {
+        maxDuration = eng.action.getClip().duration;
       }
+      const clipFrames = Math.floor(maxDuration * 30);
+      if (clipFrames > 0) clipMax = clipFrames;
       
       let nextFrame = anim.currentFrame + (direction === 'next' ? 25 : -25);
       if (nextFrame < 1) nextFrame = 1;
@@ -446,11 +487,17 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
         endFrame = range[1];
       }
     } else {
-      if (eng.action) {
-        const clipFrames = Math.floor(eng.action.getClip().duration * 30);
-        if (clipFrames > 0 && clipFrames < 100) {
-          endFrame = clipFrames;
-        }
+      let maxDuration = 0;
+      if (eng.actions && eng.actions.length > 0) {
+        eng.actions.forEach(act => {
+          maxDuration = Math.max(maxDuration, act.getClip().duration);
+        });
+      } else if (eng.action) {
+        maxDuration = eng.action.getClip().duration;
+      }
+      const clipFrames = Math.floor(maxDuration * 30);
+      if (clipFrames > 0 && clipFrames < 100) {
+        endFrame = clipFrames;
       }
     }
 
