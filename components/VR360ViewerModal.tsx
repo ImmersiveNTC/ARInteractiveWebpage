@@ -223,6 +223,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
 
     // Touch zooming pinch gesture helper
     let touchStartDist = 0;
+    
     const onTouchStart = (event: TouchEvent) => {
       if (event.touches.length === 2) {
         event.preventDefault(); // Prevent browser viewport zooming
@@ -233,17 +234,27 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
     };
 
     const onTouchMove = (event: TouchEvent) => {
-      if (event.touches.length === 2 && touchStartDist > 0) {
+      if (event.touches.length === 2) {
         event.preventDefault(); // Prevent browser viewport zooming
         const dx = event.touches[0].clientX - event.touches[1].clientX;
         const dy = event.touches[0].clientY - event.touches[1].clientY;
         const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (touchStartDist === 0) {
+          touchStartDist = dist;
+          return;
+        }
+
         const factor = touchStartDist / dist;
         const fov = camera.fov * factor;
         camera.fov = THREE.MathUtils.clamp(fov, 30, 95);
         camera.updateProjectionMatrix();
         touchStartDist = dist;
       }
+    };
+
+    const onTouchEnd = () => {
+      touchStartDist = 0;
     };
 
     const container = containerRef.current;
@@ -253,6 +264,8 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
     container.addEventListener('wheel', onDocumentMouseWheel, { passive: true });
     container.addEventListener('touchstart', onTouchStart, { passive: false });
     container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchend', onTouchEnd);
+    container.addEventListener('touchcancel', onTouchEnd);
 
     // 7. Resize Event
     const onWindowResize = () => {
@@ -352,6 +365,8 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
         container.removeEventListener('wheel', onDocumentMouseWheel);
         container.removeEventListener('touchstart', onTouchStart);
         container.removeEventListener('touchmove', onTouchMove);
+        container.removeEventListener('touchend', onTouchEnd);
+        container.removeEventListener('touchcancel', onTouchEnd);
       }
 
       geometry.dispose();
@@ -464,6 +479,8 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
           onPointerDown={(e) => e.stopPropagation()}
           onPointerMove={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Timeline and duration */}
