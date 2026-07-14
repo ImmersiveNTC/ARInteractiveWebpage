@@ -100,7 +100,7 @@ export default function Home() {
             </div>
             <h2 className="text-2xl font-bold mb-3 text-white">360° gallery</h2>
             <p className="text-white/60">
-              Immerse yourself in 360° environments using your smart phone.
+              Immerse yourself in 360° environments
             </p>
           </div>
         </Link>

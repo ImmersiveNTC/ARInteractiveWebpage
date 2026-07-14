@@ -202,8 +202,9 @@ export function VR360Gallery({ items }: VR360GalleryProps) {
             360° <span>Gallery</span>
           </h1>
           <p className="ar360-header__sub">
-            Step inside detailed 360° environments. Look around using your phone&apos;s 
-            gyroscope sensors, or drag to explore on desktop.
+            Explore 360° environments from every angle. <br />
+            On a mobile device, simply move your phone to look around. <br />
+            On a desktop, click and drag with your mouse to navigate the scene.
           </p>
         </header>
 
