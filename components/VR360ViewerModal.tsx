@@ -203,9 +203,9 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
       if (event.isPrimary === false) return;
       if (state.isUserInteracting === true) {
         // Adjust sensitivity
-        const factor = camera.fov / 500;
-        state.targetLon = (event.clientX - state.onPointerDownPointerX) * factor + state.onPointerDownLon;
-        state.targetLat = (state.onPointerDownPointerY - event.clientY) * factor + state.onPointerDownLat;
+        const shadowFactor = camera.fov / 500;
+        state.targetLon = (event.clientX - state.onPointerDownPointerX) * shadowFactor + state.onPointerDownLon;
+        state.targetLat = (event.clientY - state.onPointerDownPointerY) * shadowFactor + state.onPointerDownLat;
       }
     };
 
