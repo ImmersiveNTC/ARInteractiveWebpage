@@ -109,6 +109,8 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
     gyroAlpha: null as number | null,
     gyroBeta: null as number | null,
     gyroGamma: null as number | null,
+    orientationChanged: false,
+    Q_old: null as THREE.Quaternion | null,
   });
 
   // Detect mobile device
@@ -204,8 +206,8 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
       if (state.isUserInteracting === true) {
         // Adjust sensitivity
         const factor = camera.fov / 500;
-        state.targetLon = (state.onPointerDownPointerX - event.clientX) * factor + state.onPointerDownLon;
-        state.targetLat = (event.clientY - state.onPointerDownPointerY) * factor + state.onPointerDownLat;
+        state.targetLon = (event.clientX - state.onPointerDownPointerX) * factor + state.onPointerDownLon;
+        state.targetLat = (state.onPointerDownPointerY - event.clientY) * factor + state.onPointerDownLat;
       }
     };
 
@@ -217,7 +219,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
     // Zooming via Wheel
     const onDocumentMouseWheel = (event: WheelEvent) => {
       const fov = camera.fov + event.deltaY * 0.05;
-      camera.fov = THREE.MathUtils.clamp(fov, 30, 95);
+      camera.fov = THREE.MathUtils.clamp(fov, 15, 120);
       camera.updateProjectionMatrix();
     };
 
@@ -247,7 +249,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
 
         const factor = touchStartDist / dist;
         const fov = camera.fov * factor;
-        camera.fov = THREE.MathUtils.clamp(fov, 30, 95);
+        camera.fov = THREE.MathUtils.clamp(fov, 15, 120);
         camera.updateProjectionMatrix();
         touchStartDist = dist;
       }
@@ -270,6 +272,8 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
     // 7. Resize Event
     const onWindowResize = () => {
       if (!containerRef.current) return;
+      state.Q_old = camera.quaternion.clone();
+      state.orientationChanged = true;
       width = containerRef.current.clientWidth;
       height = containerRef.current.clientHeight;
       camera.aspect = width / height;
@@ -320,6 +324,17 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
         const phoneQuaternion = deviceQuaternion.clone()
           .multiply(screenQuaternion)
           .multiply(worldAlignment);
+
+        // Calibration logic to eliminate orientation jump when changing device orientation
+        if (state.orientationChanged && state.Q_old) {
+          state.orientationChanged = false;
+          // Compute required Q_drag_new = Q_old * inv(phoneQuaternion)
+          const Q_drag_new = state.Q_old.clone().multiply(phoneQuaternion.clone().invert());
+          const euler = new THREE.Euler().setFromQuaternion(Q_drag_new, 'YXZ');
+          state.lon = THREE.MathUtils.radToDeg(euler.y);
+          state.targetLon = state.lon;
+          state.Q_old = null;
+        }
 
         // 5. Apply horizontal swipe/drag offset to allow turning around
         state.lon += (state.targetLon - state.lon) * 0.15;
