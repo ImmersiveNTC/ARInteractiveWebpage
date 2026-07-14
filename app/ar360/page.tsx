@@ -53,24 +53,42 @@ export default function AR360Page() {
   let files: string[] = [];
   try {
     if (fs.existsSync(assetsDir)) {
-      const validExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+      const validExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov', '.webm'];
       files = fs
         .readdirSync(assetsDir)
         .filter(f => !f.startsWith('.') && validExtensions.includes(path.extname(f).toLowerCase()));
+      
+      // Sort: video files first, then alphabetically
+      files.sort((a, b) => {
+        const aExt = path.extname(a).toLowerCase();
+        const bExt = path.extname(b).toLowerCase();
+        const aIsVideo = ['.mp4', '.mov', '.webm'].includes(aExt);
+        const bIsVideo = ['.mp4', '.mov', '.webm'].includes(bExt);
+        
+        if (aIsVideo && !bIsVideo) return -1;
+        if (!aIsVideo && bIsVideo) return 1;
+        return a.localeCompare(b);
+      });
     }
   } catch (error) {
     console.error('Error reading VR360Assets directory:', error);
   }
 
-  const items = files.map((file, idx) => ({
-    id: `vr360-asset-${idx}`,
-    displayName: toDisplayName(file),
-    category: toCategory(file),
-    fileName: file,
-    fileUrl: `/ARInteractiveWebpage/VR360Assets/${file}`,
-    accentColor: ACCENT_PALETTE[idx % ACCENT_PALETTE.length],
-    index: idx,
-  }));
+  const items = files.map((file, idx) => {
+    const ext = path.extname(file).toLowerCase();
+    const isVideo = ['.mp4', '.mov', '.webm'].includes(ext);
+    
+    return {
+      id: `vr360-asset-${idx}`,
+      displayName: toDisplayName(file),
+      category: isVideo ? '360° Video' : toCategory(file),
+      fileName: file,
+      fileUrl: `/ARInteractiveWebpage/VR360Assets/${file}`,
+      accentColor: ACCENT_PALETTE[idx % ACCENT_PALETTE.length],
+      index: idx,
+      isVideo,
+    };
+  });
 
   return <VR360Gallery items={items} />;
 }

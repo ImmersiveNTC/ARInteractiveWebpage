@@ -8,11 +8,13 @@ type VR360ViewerModalProps = {
   title: string;
   initialGyroActive: boolean;
   onClose: () => void;
+  isVideo?: boolean;
 };
 
-export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }: VR360ViewerModalProps) {
+export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, isVideo = false }: VR360ViewerModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -20,9 +22,78 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
   const [isMobileDevice, setIsMobileDevice] = useState(false);
   const [showInstructions, setShowInstructions] = useState(true);
 
+  // Playback States
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
   useEffect(() => {
     setGyroActive(initialGyroActive);
   }, [initialGyroActive]);
+
+  // Sync state with video element
+  const togglePlay = () => {
+    if (!videoRef.current) return;
+    if (isPlaying) {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      videoRef.current.play().catch(err => console.warn(err));
+      setIsPlaying(true);
+    }
+  };
+
+  const toggleMute = () => {
+    if (!videoRef.current) return;
+    videoRef.current.muted = !isMuted;
+    setIsMuted(!isMuted);
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!videoRef.current) return;
+    const time = parseFloat(e.target.value);
+    videoRef.current.currentTime = time;
+    setCurrentTime(time);
+  };
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return '00:00';
+    const mins = Math.floor(time / 60);
+    const secs = Math.floor(time % 60);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  // Video event handlers
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isVideo) return;
+
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+    const handleTimeUpdate = () => setCurrentTime(video.currentTime);
+    const handleDurationChange = () => setDuration(video.duration);
+
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    video.addEventListener('durationchange', handleDurationChange);
+    video.addEventListener('loadedmetadata', handleDurationChange);
+
+    // Sync initial states
+    setIsPlaying(!video.paused);
+    setIsMuted(video.muted);
+    setCurrentTime(video.currentTime);
+    setDuration(video.duration || 0);
+
+    return () => {
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('durationchange', handleDurationChange);
+      video.removeEventListener('loadedmetadata', handleDurationChange);
+    };
+  }, [isVideo, imageUrl]);
 
   // References to pass state to animation loops and event handlers without re-triggering useEffect
   const stateRef = useRef({
@@ -69,23 +140,35 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
     // Invert the geometry on the x-axis so that faces point inward
     geometry.scale(-1, 1, 1);
 
-    // 3. Load Texture with loading states
-    const manager = new THREE.LoadingManager();
-    manager.onProgress = (url, itemsLoaded, itemsTotal) => {
-      setLoadingProgress(Math.round((itemsLoaded / itemsTotal) * 100));
-    };
+    // 3. Load Texture with loading states (Video vs Image)
+    let texture: THREE.Texture;
+    let videoElement: HTMLVideoElement | null = null;
 
-    const textureLoader = new THREE.TextureLoader(manager);
-    const texture = textureLoader.load(imageUrl, 
-      () => {
-        setIsLoading(false);
-      },
-      undefined,
-      (err) => {
-        console.error('Error loading 360 panorama texture:', err);
-        setIsLoading(false);
-      }
-    );
+    if (isVideo && videoRef.current) {
+      videoElement = videoRef.current;
+      texture = new THREE.VideoTexture(videoElement);
+      setIsLoading(false);
+      videoElement.play().catch(err => {
+        console.warn('Autoplay failed/blocked by browser, requiring user interaction:', err);
+      });
+    } else {
+      const manager = new THREE.LoadingManager();
+      manager.onProgress = (url, itemsLoaded, itemsTotal) => {
+        setLoadingProgress(Math.round((itemsLoaded / itemsTotal) * 100));
+      };
+
+      const textureLoader = new THREE.TextureLoader(manager);
+      texture = textureLoader.load(imageUrl, 
+        () => {
+          setIsLoading(false);
+        },
+        undefined,
+        (err) => {
+          console.error('Error loading 360 panorama texture:', err);
+          setIsLoading(false);
+        }
+      );
+    }
     
     // Set wrapping options
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -275,8 +358,11 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
       material.dispose();
       texture.dispose();
       renderer.dispose();
+      if (videoElement) {
+        videoElement.pause();
+      }
     };
-  }, [imageUrl]);
+  }, [imageUrl, isVideo]);
 
   // Handle Gyroscope Orientation Logic
   useEffect(() => {
@@ -306,6 +392,18 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black overflow-hidden select-none">
       
+      {/* Hidden Video element for Three.js VideoTexture */}
+      {isVideo && (
+        <video 
+          ref={videoRef}
+          src={imageUrl}
+          loop
+          playsInline
+          muted={isMuted}
+          className="hidden"
+        />
+      )}
+
       {/* 3D Render Canvas Container */}
       <div 
         ref={containerRef} 
@@ -356,6 +454,78 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose }
               <path d="M9 18l6-6-6-6" />
             </svg>
           </p>
+        </div>
+      )}
+
+      {/* ── Sleek Playback Controller for 360 Video ── */}
+      {isVideo && !isLoading && (
+        <div 
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-lg bg-black/60 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-2xl backdrop-blur-md select-none transition-all duration-300"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Timeline and duration */}
+          <div className="flex items-center gap-3 w-full">
+            <span className="text-xs font-mono text-white/70 w-10 text-right">{formatTime(currentTime)}</span>
+            <input 
+              type="range"
+              min={0}
+              max={duration || 100}
+              step={0.1}
+              value={currentTime}
+              onChange={handleSeek}
+              className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-teal-400 outline-none hover:bg-white/20 transition-all"
+            />
+            <span className="text-xs font-mono text-white/70 w-10">{formatTime(duration)}</span>
+          </div>
+
+          {/* Buttons row */}
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-4">
+              {/* Play/Pause */}
+              <button 
+                onClick={togglePlay}
+                className="w-10 h-10 rounded-full bg-teal-500 hover:bg-teal-400 transition-colors flex items-center justify-center text-black cursor-pointer shadow-lg active:scale-95"
+              >
+                {isPlaying ? (
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </button>
+
+              {/* Mute/Unmute */}
+              <button 
+                onClick={toggleMute}
+                className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center justify-center text-white cursor-pointer active:scale-95"
+              >
+                {isMuted ? (
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                    <line x1="23" y1="9" x2="17" y2="15" />
+                    <line x1="17" y1="9" x2="23" y2="15" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            
+            {/* Status / File Indicator */}
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-teal-400/80 bg-teal-500/10 px-3 py-1 rounded-full border border-teal-500/20">
+              Video Mode
+            </div>
+          </div>
         </div>
       )}
     </div>

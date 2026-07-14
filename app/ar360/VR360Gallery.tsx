@@ -14,6 +14,7 @@ type PanoramaData = {
   fileUrl: string;
   accentColor: string;
   index: number;
+  isVideo?: boolean;
 };
 
 type VR360GalleryProps = {
@@ -51,7 +52,7 @@ function VR360Card({ item, onClick }: { item: PanoramaData; onClick: (item: Pano
   return (
     <div
       id={item.id}
-      className="ar360-card"
+      className="ar360-card group"
       style={{
         animationDelay: `${item.index * 100 + 50}ms`,
         ['--ar360-accent' as string]: item.accentColor,
@@ -69,13 +70,40 @@ function VR360Card({ item, onClick }: { item: PanoramaData; onClick: (item: Pano
       <div className="ar360-card__glow" style={{ background: item.accentColor }} />
 
       {/* Card Thumbnail */}
-      <div className="ar360-card__thumbnail">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img 
-          src={item.fileUrl} 
-          alt={item.displayName}
-          loading="lazy"
-        />
+      <div className="ar360-card__thumbnail relative overflow-hidden">
+        {item.isVideo ? (
+          <>
+            <video 
+              src={item.fileUrl} 
+              muted 
+              playsInline 
+              loop 
+              autoPlay
+              className="w-full h-full object-cover transition-transform duration-600 ease-out"
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center',
+              }}
+            />
+            {/* Play Button Overlay */}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/15 group-hover:bg-black/35 transition-colors duration-300 z-10">
+              <div className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-white shadow-lg transform group-hover:scale-110 transition-transform duration-300">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img 
+            src={item.fileUrl} 
+            alt={item.displayName}
+            loading="lazy"
+          />
+        )}
       </div>
 
       {/* Card body */}
@@ -93,13 +121,19 @@ function VR360Card({ item, onClick }: { item: PanoramaData; onClick: (item: Pano
       {/* Format Badge */}
       <div className="ar360-card__badge" style={{ ['--ar360-accent' as string]: item.accentColor }}>
         <span className="ar360-card__badge-icon">
-          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-            <path d="M2 12h20" />
-          </svg>
+          {item.isVideo ? (
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+              <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+              <path d="M2 12h20" />
+            </svg>
+          )}
         </span>
-        360°
+        {item.isVideo ? '360° VIDEO' : '360°'}
       </div>
 
       {/* CTA hint */}
@@ -296,6 +330,7 @@ export function VR360Gallery({ items }: VR360GalleryProps) {
           title={activeViewerItem.displayName}
           initialGyroActive={gyroAllowed}
           onClose={() => setActiveViewerItem(null)}
+          isVideo={activeViewerItem.isVideo}
         />
       )}
     </div>
