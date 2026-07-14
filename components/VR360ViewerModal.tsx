@@ -318,9 +318,16 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
           
           state.lastScreenAngle = screenAngle;
           
-          // Calculate the phone orientation without screen rotation (since iOS Safari auto-rotates sensor data)
+          const screenOrientationRadNew = THREE.MathUtils.degToRad(screenAngle);
+          const screenQuaternionNew = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 0, 1),
+            -screenOrientationRadNew
+          );
+          
+          // Apply screen orientation roll relative to the aligned world coordinates (to the right of worldAlignment)
           const phoneQuaternionNew = deviceQuaternion.clone()
-            .multiply(worldAlignment);
+            .multiply(worldAlignment)
+            .multiply(screenQuaternionNew);
             
           const Q_drag_new = Q_old.clone().multiply(phoneQuaternionNew.clone().invert());
           const euler = new THREE.Euler().setFromQuaternion(Q_drag_new, 'YXZ');
@@ -329,9 +336,16 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
           state.targetLon = state.lon;
         }
 
-        // Calculate the base phone sensors rotation relative to the screen (excluding screenQuaternion to avoid double compensation)
+        const screenOrientationRad = THREE.MathUtils.degToRad(screenAngle);
+        const screenQuaternion = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 0, 1),
+          -screenOrientationRad
+        );
+
+        // Calculate the base phone sensors rotation relative to the screen (multiplying screenQuaternion on the right of worldAlignment)
         const phoneQuaternion = deviceQuaternion.clone()
-          .multiply(worldAlignment);
+          .multiply(worldAlignment)
+          .multiply(screenQuaternion);
 
         // 5. Apply horizontal swipe/drag offset to allow turning around
         state.lon += (state.targetLon - state.lon) * 0.15;
