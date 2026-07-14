@@ -295,6 +295,12 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
         const deviceEuler = new THREE.Euler(betaRad, alphaRad, -gammaRad, 'YXZ');
         const deviceQuaternion = new THREE.Quaternion().setFromEuler(deviceEuler);
 
+        // Align coordinate systems (Z-axis offset vs Y-axis in Three.js)
+        const worldAlignment = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(1, 0, 0),
+          -Math.PI / 2
+        );
+
         // 3. Compensate for screen orientation
         let screenAngle = 0;
         if (typeof window !== 'undefined') {
@@ -335,11 +341,7 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
           -screenOrientationRad
         );
 
-        // 4. Align coordinate systems (Z-axis offset vs Y-axis in Three.js)
-        const worldAlignment = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(1, 0, 0),
-          -Math.PI / 2
-        );
+        // 4. Already aligned with worldAlignment above
 
         // Combine base phone sensors rotation in standard Three.js order: Device * Screen * WorldAlignment
         const phoneQuaternion = deviceQuaternion.clone()
