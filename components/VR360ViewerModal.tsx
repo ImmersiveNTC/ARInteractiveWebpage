@@ -109,7 +109,6 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
     gyroAlpha: null as number | null,
     gyroBeta: null as number | null,
     gyroGamma: null as number | null,
-    lastScreenAngle: typeof window !== 'undefined' ? (window.orientation || window.screen?.orientation?.angle || 0) : 0,
   });
 
   // Detect mobile device
@@ -310,30 +309,6 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
           } else if (win.screen && win.screen.orientation) {
             screenAngle = win.screen.orientation.angle || 0;
           }
-        }
-
-        // Detect screen angle change directly in the render loop to calibrate drag offset
-        if (state.lastScreenAngle !== screenAngle) {
-          const Q_old = camera.quaternion.clone();
-          
-          state.lastScreenAngle = screenAngle;
-          
-          const screenOrientationRadNew = THREE.MathUtils.degToRad(screenAngle);
-          const screenQuaternionNew = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 0, 1),
-            -screenOrientationRadNew
-          );
-          
-          // Apply screen orientation roll relative to the aligned world coordinates (to the right of worldAlignment)
-          const phoneQuaternionNew = deviceQuaternion.clone()
-            .multiply(worldAlignment)
-            .multiply(screenQuaternionNew);
-            
-          const Q_drag_new = Q_old.clone().multiply(phoneQuaternionNew.clone().invert());
-          const euler = new THREE.Euler().setFromQuaternion(Q_drag_new, 'YXZ');
-          
-          state.lon = THREE.MathUtils.radToDeg(euler.y);
-          state.targetLon = state.lon;
         }
 
         const screenOrientationRad = THREE.MathUtils.degToRad(screenAngle);
