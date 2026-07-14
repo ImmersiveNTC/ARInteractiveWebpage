@@ -476,15 +476,10 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       anim.targetFrame = startFrame;
       anim.playDirection = -1;
     } else {
-      const distToStart = Math.abs(anim.currentFrame - startFrame);
-      const distToEnd = Math.abs(anim.currentFrame - endFrame);
-      if (distToStart > distToEnd) {
-        anim.targetFrame = startFrame;
-        anim.playDirection = -1;
-      } else {
-        anim.targetFrame = endFrame;
-        anim.playDirection = 1;
-      }
+      // If we are completely outside the range (e.g. at frame 0 on first load), snap to the start frame of the range first
+      setFrame(startFrame);
+      anim.targetFrame = endFrame;
+      anim.playDirection = 1;
     }
     anim.isPlaying = true;
   };
