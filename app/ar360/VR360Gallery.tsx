@@ -191,9 +191,9 @@ export function VR360Gallery({ items }: VR360GalleryProps) {
     <div className="app-page min-h-screen text-white font-sans flex flex-col">
       <GalleryNav activePage="ar360" />
       
-      <main className="mx-auto w-full max-w-7xl px-6 pt-12 pb-24 md:pt-16 md:pb-32 flex-1">
+      <main className="mx-auto w-full max-w-7xl px-6 pt-8 pb-16 md:pt-12 md:pb-24 flex-1">
         {/* ── Header ── */}
-        <header className="mb-16">
+        <header className="mb-8 md:mb-12">
           <div className="ar360-header__eyebrow">
             <span className="ar360-header__eyebrow-dot" />
             Mobile 360 Experience

@@ -20,7 +20,7 @@ export default function Home() {
     <div className="app-page min-h-screen text-white font-sans flex flex-col items-center justify-center p-6 bg-[#0a0a0a]">
       
       {/* Header */}
-      <header className="mb-12 text-center">
+      <header className="mb-8 md:mb-12 text-center">
         <h1 className="text-4xl md:text-5xl font-bold mb-4 tracking-tight">
           Immersive Webpage
         </h1>
@@ -30,7 +30,7 @@ export default function Home() {
       </header>
 
       {/* The Three Main Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl mb-16 relative z-10">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl mb-10 md:mb-12 relative z-10">
         
         {/* Interactive 3D Gallery Card */}
         <Link 

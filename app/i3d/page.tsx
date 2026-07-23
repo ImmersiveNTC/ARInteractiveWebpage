@@ -77,9 +77,9 @@ export default function I3DPage() {
   return (
     <div className="app-page min-h-screen text-white font-sans flex flex-col">
       <GalleryNav activePage="i3d" />
-      <main className="mx-auto w-full max-w-7xl px-6 pt-12 pb-24 md:pt-16 md:pb-32 flex-1">
+      <main className="mx-auto w-full max-w-7xl px-6 pt-8 pb-16 md:pt-12 md:pb-24 flex-1">
         {/* ── Header ── */}
-        <header className="mb-20">
+        <header className="mb-8 md:mb-12">
           <h1 className="i3d-header__title">
             Interactive 3D Gallery
           </h1>
