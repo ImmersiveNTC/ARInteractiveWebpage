@@ -179,7 +179,7 @@ export default function Home() {
           href="https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=HcsB-6i7GkyU7979ecWaCSnp0LyYrbNAsuKV9Y5136tUN0tSMTVOVFVaUVVINDdFNk1MSzZZUTlQTiQlQCN0PWcu"
           target="_blank"
           rel="noopener noreferrer"
-          className="px-6 py-2.5 rounded-full text-xs font-semibold tracking-wide bg-indigo-500/20 border border-indigo-500/35 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.2)] hover:bg-indigo-500/30 hover:border-indigo-500/50 hover:text-white hover:-translate-y-0.5 hover:shadow-[0_0_16px_rgba(99,102,241,0.3)] transition-all duration-300"
+          className="px-10 py-4 rounded-full text-sm font-semibold tracking-widest bg-indigo-500/20 border border-indigo-500/35 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.2)] animate-feedback-pulse hover:bg-indigo-500/35 hover:border-indigo-500/50 hover:text-white hover:-translate-y-0.5 hover:shadow-[0_0_20px_rgba(99,102,241,0.4)] transition-all duration-300"
         >
           Tell Us What You Think
         </a>
