@@ -25,7 +25,7 @@ export default function Home() {
           Immersive Webpage
         </h1>
         <p className="text-white/60 max-w-lg mx-auto">
-          Explore our collection of interactive 3D models and augmented reality assets.
+          Explore our collection of interactive 3D models and augmented reality assets. Please note that assets are works in progress, including third-party models used for demonstration.
         </p>
       </header>
 
