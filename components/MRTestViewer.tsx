@@ -10,31 +10,30 @@ type TestModel = {
   id: string;
   name: string;
   glbUrl: string;
-  usdzUrl: string;
 };
 
 const TEST_MODELS: TestModel[] = [
   {
     id: 'metering-cabinet',
-    name: 'Metering Cabinet (GLB)',
+    name: 'Metering Cabinet',
     glbUrl: `${BASE_PATH}/3Dassets/${encodeURIComponent('Metering Cabinet-3Di.glb')}`,
-    usdzUrl: `${BASE_PATH}/ARassets/${encodeURIComponent('Metering Cabinet-ARs.usdz')}`,
   },
   {
     id: 'bike',
-    name: 'Bike (GLB)',
+    name: 'Bike',
     glbUrl: `${BASE_PATH}/3Dassets/${encodeURIComponent('bike-3Di.glb')}`,
-    usdzUrl: `${BASE_PATH}/ARassets/${encodeURIComponent('Buster_Drone-ARs.usdz')}`,
   },
 ];
+
+const FLOOR_Y = -1.15;
 
 export function MRTestViewer() {
   const [selectedModel, setSelectedModel] = useState<TestModel>(TEST_MODELS[0]);
   const [mrActive, setMrActive] = useState(false);
+  const [isPlaced, setIsPlaced] = useState(false);
+  const [dragMode, setDragMode] = useState<'move' | 'rotate'>('move');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [modelLoading, setModelLoading] = useState(true);
-  const [webXRSupported, setWebXRSupported] = useState<boolean | null>(null);
-  const [statusMsg, setStatusMsg] = useState<string>('Ready to start Mixed Reality.');
   const [hasAnimations, setHasAnimations] = useState(false);
   const [animPlaying, setAnimPlaying] = useState(false);
 
@@ -43,57 +42,50 @@ export function MRTestViewer() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Scene and interaction refs
+  // Three.js scene refs
   const modelGroupRef = useRef<THREE.Group | null>(null);
-  const reticleRef = useRef<THREE.Mesh | null>(null);
+  const reticleGroupRef = useRef<THREE.Group | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionsRef = useRef<THREE.AnimationAction[]>([]);
 
-  const interactionRef = useRef({
+  // Mutable state accessed inside requestAnimationFrame & pointer handlers
+  const stateRef = useRef({
+    mrActive: false,
+    isPlaced: false,
+    dragMode: 'move' as 'move' | 'rotate',
     gyroEnabled: false,
     alpha: null as number | null,
     beta: null as number | null,
     gamma: null as number | null,
-    initialAlpha: null as number | null,
+    targetPos: new THREE.Vector3(0, FLOOR_Y, -2.2),
+    currentPos: new THREE.Vector3(0, FLOOR_Y, -2.2),
     modelYaw: 0,
-    modelPitch: 0,
     modelScale: 1,
-    modelDistance: 2.2,
-    modelYOffset: -0.45,
     isDragging: false,
+    pointerDownX: 0,
+    pointerDownY: 0,
     lastX: 0,
     lastY: 0,
+    movedDuringTap: false,
     pinchStartDist: 0,
     pinchStartScale: 1,
+    pinchStartAngle: 0,
+    pinchStartYaw: 0,
   });
 
-  // Check native WebXR immersive-ar support
   useEffect(() => {
-    const nav = navigator as Navigator & {
-      xr?: { isSessionSupported?: (mode: string) => Promise<boolean> };
-    };
-    if (nav.xr && typeof nav.xr.isSessionSupported === 'function') {
-      nav.xr
-        .isSessionSupported('immersive-ar')
-        .then(supported => setWebXRSupported(supported))
-        .catch(() => setWebXRSupported(false));
-    } else {
-      queueMicrotask(() => setWebXRSupported(false));
-    }
-  }, []);
+    stateRef.current.mrActive = mrActive;
+  }, [mrActive]);
 
-  // Load Google <model-viewer> script once for testing its WebXR / Quick Look bridge
   useEffect(() => {
-    if (document.querySelector('script[data-model-viewer]')) return;
-    const script = document.createElement('script');
-    script.type = 'module';
-    script.src = 'https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js';
-    script.setAttribute('data-model-viewer', 'true');
-    document.head.appendChild(script);
-  }, []);
+    stateRef.current.isPlaced = isPlaced;
+  }, [isPlaced]);
+
+  useEffect(() => {
+    stateRef.current.dragMode = dragMode;
+  }, [dragMode]);
 
   const stopCameraStream = useCallback(() => {
     if (streamRef.current) {
@@ -105,12 +97,32 @@ export function MRTestViewer() {
     }
   }, []);
 
-  // Start rear camera + iOS gyroscope for browser-native Mixed Reality (Power Apps MR style)
+  useEffect(() => () => stopCameraStream(), [stopCameraStream]);
+
+  // Helper to update material opacity for ghost scanning preview vs placed solid model
+  const setModelGhostStyle = useCallback((ghost: boolean) => {
+    const group = modelGroupRef.current;
+    if (!group) return;
+    group.traverse(obj => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.material) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      mats.forEach(mat => {
+        if (ghost) {
+          mat.transparent = true;
+          mat.opacity = 0.62;
+        } else {
+          mat.opacity = 1;
+        }
+        mat.needsUpdate = true;
+      });
+    });
+  }, []);
+
+  // Start full-screen Mixed Reality (Rear Camera + Gyroscope + Scanning Mode)
   const startMixedReality = async () => {
     setCameraError(null);
-    setStatusMsg('Requesting camera & motion sensors...');
 
-    // 1. Request iOS 13+ DeviceOrientation permission inside user tap gesture
     const DeviceOrientation = (
       window as unknown as {
         DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
@@ -120,21 +132,20 @@ export function MRTestViewer() {
     if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
       try {
         const perm = await DeviceOrientation.requestPermission();
-        interactionRef.current.gyroEnabled = perm === 'granted';
+        stateRef.current.gyroEnabled = perm === 'granted';
       } catch {
-        interactionRef.current.gyroEnabled = false;
+        stateRef.current.gyroEnabled = false;
       }
     } else {
-      interactionRef.current.gyroEnabled = true;
+      stateRef.current.gyroEnabled = true;
     }
 
-    // 2. Request Rear Camera stream via WebRTC (stays inside Edge, never blocked by Intune MAM)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
         },
         audio: false,
       });
@@ -143,48 +154,27 @@ export function MRTestViewer() {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-      interactionRef.current.initialAlpha = null;
-      setMrActive(true);
-      setStatusMsg('Mixed Reality active — drag to rotate, pinch to scale, or tap Place Here.');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not access rear camera.';
       setCameraError(message);
-      setStatusMsg('Camera access failed — rendering in 3D preview mode.');
-      setMrActive(true);
-    }
-  };
-
-  const exitMixedReality = () => {
-    stopCameraStream();
-    setMrActive(false);
-    setStatusMsg('Exited Mixed Reality.');
-  };
-
-  useEffect(() => () => stopCameraStream(), [stopCameraStream]);
-
-  // Place / Re-center model in front of current camera gaze
-  const placeInFrontOfCamera = () => {
-    const camera = cameraRef.current;
-    const modelGroup = modelGroupRef.current;
-    if (!camera || !modelGroup) return;
-
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    forward.y = 0;
-    if (forward.lengthSq() < 0.001) {
-      forward.set(0, 0, -1);
-    } else {
-      forward.normalize();
     }
 
-    const dist = interactionRef.current.modelDistance;
-    modelGroup.position.set(
-      forward.x * dist,
-      interactionRef.current.modelYOffset,
-      forward.z * dist
-    );
-    modelGroup.lookAt(0, interactionRef.current.modelYOffset, 0);
-    interactionRef.current.modelYaw = modelGroup.rotation.y;
-    setStatusMsg('Model anchored in front of camera.');
+    setIsPlaced(false);
+    stateRef.current.isPlaced = false;
+    setModelGhostStyle(true);
+    setMrActive(true);
+  };
+
+  const confirmPlacement = useCallback(() => {
+    setIsPlaced(true);
+    stateRef.current.isPlaced = true;
+    setModelGhostStyle(false);
+  }, [setModelGhostStyle]);
+
+  const enterRescanMode = () => {
+    setIsPlaced(false);
+    stateRef.current.isPlaced = false;
+    setModelGhostStyle(true);
   };
 
   const toggleAnimation = () => {
@@ -201,29 +191,7 @@ export function MRTestViewer() {
     setAnimPlaying(nextState);
   };
 
-  // Launch Native WebXR session if browser supports immersive-ar
-  const launchNativeWebXR = async () => {
-    const nav = navigator as Navigator & {
-      xr?: { requestSession?: (mode: string, opts?: object) => Promise<XRSession> };
-    };
-    if (!nav.xr?.requestSession || !rendererRef.current) {
-      setStatusMsg('Native WebXR immersive-ar is not enabled in this browser. Use Edge MR Camera mode above.');
-      return;
-    }
-    try {
-      const session = await nav.xr.requestSession('immersive-ar', {
-        optionalFeatures: ['local-floor', 'bounded-floor', 'hit-test'],
-      });
-      rendererRef.current.xr.enabled = true;
-      await rendererRef.current.xr.setSession(session);
-      setStatusMsg('Native WebXR session started.');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'WebXR launch failed';
-      setStatusMsg(`WebXR error: ${msg}`);
-    }
-  };
-
-  // Three.js Scene + GLB Loader + Gyroscope & Touch Controls
+  // Three.js Scene + Floor Raycasting + Gyroscope
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -233,9 +201,8 @@ export function MRTestViewer() {
     const height = container.clientHeight || window.innerHeight;
 
     const scene = new THREE.Scene();
-    sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(60, width / height, 0.05, 100);
+    const camera = new THREE.PerspectiveCamera(65, width / height, 0.05, 100);
     camera.position.set(0, 0, 0);
     cameraRef.current = camera;
 
@@ -243,45 +210,62 @@ export function MRTestViewer() {
       canvas,
       alpha: true,
       antialias: true,
-      preserveDrawingBuffer: true,
+      powerPreference: 'high-performance',
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height);
     renderer.setClearColor(0x000000, 0);
     rendererRef.current = renderer;
 
-    // Lighting matching Power Apps MR studio light
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
-    scene.add(ambientLight);
-
-    const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.8);
-    dirLight1.position.set(3, 6, 4);
+    // Studio lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 2.0);
+    dirLight1.position.set(4, 8, 5);
     scene.add(dirLight1);
-
-    const dirLight2 = new THREE.DirectionalLight(0x90b4ff, 0.8);
-    dirLight2.position.set(-4, -2, -3);
+    const dirLight2 = new THREE.DirectionalLight(0x90b4ff, 0.9);
+    dirLight2.position.set(-4, 2, -3);
     scene.add(dirLight2);
 
-    // Power Apps MR style floor placement ring / reticle
-    const ringGeo = new THREE.RingGeometry(0.32, 0.38, 48);
-    ringGeo.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({
+    // Power Apps MR Floor Reticle (outer ring + inner ring + center dot)
+    const reticleGroup = new THREE.Group();
+    const outerRingGeo = new THREE.RingGeometry(0.38, 0.43, 64);
+    outerRingGeo.rotateX(-Math.PI / 2);
+    const outerRingMat = new THREE.MeshBasicMaterial({
       color: 0xf59e0b,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9,
+    });
+    reticleGroup.add(new THREE.Mesh(outerRingGeo, outerRingMat));
+
+    const innerRingGeo = new THREE.RingGeometry(0.18, 0.2, 48);
+    innerRingGeo.rotateX(-Math.PI / 2);
+    const innerRingMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
       side: THREE.DoubleSide,
       transparent: true,
       opacity: 0.75,
     });
-    const reticle = new THREE.Mesh(ringGeo, ringMat);
-    reticle.position.set(0, interactionRef.current.modelYOffset - 0.55, -interactionRef.current.modelDistance);
-    scene.add(reticle);
-    reticleRef.current = reticle;
+    reticleGroup.add(new THREE.Mesh(innerRingGeo, innerRingMat));
 
+    const dotGeo = new THREE.CircleGeometry(0.05, 32);
+    dotGeo.rotateX(-Math.PI / 2);
+    const dotMat = new THREE.MeshBasicMaterial({
+      color: 0xf59e0b,
+      side: THREE.DoubleSide,
+    });
+    reticleGroup.add(new THREE.Mesh(dotGeo, dotMat));
+
+    reticleGroup.position.copy(stateRef.current.currentPos);
+    scene.add(reticleGroup);
+    reticleGroupRef.current = reticleGroup;
+
+    // Model Group (bottom-aligned to floor plane so it stands directly on the reticle)
     const modelGroup = new THREE.Group();
-    modelGroup.position.set(0, interactionRef.current.modelYOffset, -interactionRef.current.modelDistance);
+    modelGroup.position.copy(stateRef.current.currentPos);
     scene.add(modelGroup);
     modelGroupRef.current = modelGroup;
 
-    // Load selected GLB
     queueMicrotask(() => {
       setModelLoading(true);
       setHasAnimations(false);
@@ -292,7 +276,6 @@ export function MRTestViewer() {
     loader.load(
       selectedModel.glbUrl,
       gltf => {
-        // Clear previous children
         while (modelGroup.children.length > 0) {
           modelGroup.remove(modelGroup.children[0]);
         }
@@ -302,15 +285,15 @@ export function MRTestViewer() {
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z) || 1;
-        const normScale = 1.25 / maxDim;
+        const normScale = 1.15 / maxDim;
 
-        root.position.sub(center);
+        // Center X and Z, and place the bottom of the bounding box at Y = 0 (on the floor reticle)
+        root.position.set(-center.x * normScale, -box.min.y * normScale, -center.z * normScale);
         root.scale.setScalar(normScale);
         modelGroup.add(root);
 
-        interactionRef.current.modelScale = 1;
-        interactionRef.current.modelYaw = 0;
-        interactionRef.current.modelPitch = 0;
+        stateRef.current.modelScale = 1;
+        setModelGhostStyle(!stateRef.current.isPlaced && stateRef.current.mrActive);
 
         if (gltf.animations && gltf.animations.length > 0) {
           const mixer = new THREE.AnimationMixer(root);
@@ -333,71 +316,156 @@ export function MRTestViewer() {
       err => {
         console.error('Error loading GLB for MR test:', err);
         setModelLoading(false);
-        setStatusMsg('Failed to load GLB model.');
       }
     );
 
-    // Device orientation listener
+    // Raw DeviceOrientation listener (exact quaternion pipeline from 360 viewer)
     const onDeviceOrientation = (e: DeviceOrientationEvent) => {
       if (e.alpha === null || e.beta === null || e.gamma === null) return;
-      if (interactionRef.current.initialAlpha === null) {
-        interactionRef.current.initialAlpha = e.alpha;
-      }
-      interactionRef.current.alpha = e.alpha - (interactionRef.current.initialAlpha ?? 0);
-      interactionRef.current.beta = e.beta;
-      interactionRef.current.gamma = e.gamma;
+      stateRef.current.alpha = e.alpha;
+      stateRef.current.beta = e.beta;
+      stateRef.current.gamma = e.gamma;
     };
     window.addEventListener('deviceorientation', onDeviceOrientation, true);
 
-    // Touch & pointer gestures (1-finger rotate, 2-finger pinch scale)
+    // Raycast helper onto horizontal floor plane (Y = FLOOR_Y)
+    const raycaster = new THREE.Raycaster();
+    const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -FLOOR_Y);
+    const hitVec = new THREE.Vector3();
+
+    const projectScreenPointToFloor = (clientX: number, clientY: number, out: THREE.Vector3): boolean => {
+      const rect = container.getBoundingClientRect();
+      const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+
+      const dir = raycaster.ray.direction;
+      if (dir.y < -0.04) {
+        const hit = raycaster.ray.intersectPlane(floorPlane, hitVec);
+        if (hit) {
+          // Clamp radial distance to [0.8m, 7.5m] so object stays within reachable view
+          const dist = Math.hypot(hit.x, hit.z);
+          if (dist > 7.5) {
+            const scale = 7.5 / dist;
+            hit.x *= scale;
+            hit.z *= scale;
+          } else if (dist < 0.8) {
+            const scale = 0.8 / Math.max(dist, 0.001);
+            hit.x *= scale;
+            hit.z *= scale;
+          }
+          out.set(hit.x, FLOOR_Y, hit.z);
+          return true;
+        }
+      }
+
+      // Fallback when pointing above horizon: project forward horizontally at current distance
+      const currentDist = Math.hypot(
+        stateRef.current.currentPos.x,
+        stateRef.current.currentPos.z
+      );
+      const d = THREE.MathUtils.clamp(currentDist || 2.2, 1.2, 4.5);
+      const horiz = new THREE.Vector3(dir.x, 0, dir.z);
+      if (horiz.lengthSq() > 0.0001) {
+        horiz.normalize();
+        out.set(horiz.x * d, FLOOR_Y, horiz.z * d);
+        return true;
+      }
+      return false;
+    };
+
+    // Pointer & touch handlers
     const onPointerDown = (e: PointerEvent) => {
       if (!e.isPrimary) return;
-      interactionRef.current.isDragging = true;
-      interactionRef.current.lastX = e.clientX;
-      interactionRef.current.lastY = e.clientY;
+      stateRef.current.isDragging = true;
+      stateRef.current.pointerDownX = e.clientX;
+      stateRef.current.pointerDownY = e.clientY;
+      stateRef.current.lastX = e.clientX;
+      stateRef.current.lastY = e.clientY;
+      stateRef.current.movedDuringTap = false;
     };
 
     const onPointerMove = (e: PointerEvent) => {
-      if (!e.isPrimary || !interactionRef.current.isDragging) return;
-      const dx = e.clientX - interactionRef.current.lastX;
-      const dy = e.clientY - interactionRef.current.lastY;
-      interactionRef.current.lastX = e.clientX;
-      interactionRef.current.lastY = e.clientY;
+      if (!e.isPrimary || !stateRef.current.isDragging) return;
+      const dx = e.clientX - stateRef.current.lastX;
+      const dy = e.clientY - stateRef.current.lastY;
+      stateRef.current.lastX = e.clientX;
+      stateRef.current.lastY = e.clientY;
 
-      interactionRef.current.modelYaw += dx * 0.01;
-      interactionRef.current.modelPitch = THREE.MathUtils.clamp(
-        interactionRef.current.modelPitch + dy * 0.006,
-        -0.6,
-        0.6
-      );
+      if (
+        Math.hypot(
+          e.clientX - stateRef.current.pointerDownX,
+          e.clientY - stateRef.current.pointerDownY
+        ) > 8
+      ) {
+        stateRef.current.movedDuringTap = true;
+      }
+
+      if (!stateRef.current.mrActive) {
+        // Preview mode before starting MR: horizontal drag rotates Y only
+        stateRef.current.modelYaw += dx * 0.01;
+        return;
+      }
+
+      if (!stateRef.current.isPlaced) {
+        // In scanning mode, dragging aims the floor target directly under the finger
+        projectScreenPointToFloor(e.clientX, e.clientY, stateRef.current.targetPos);
+        return;
+      }
+
+      // In placed mode: either slide across the floor plane OR rotate around vertical Y-axis
+      if (stateRef.current.dragMode === 'rotate') {
+        stateRef.current.modelYaw += dx * 0.012;
+      } else {
+        projectScreenPointToFloor(e.clientX, e.clientY, stateRef.current.targetPos);
+        // Optional subtle depth adjustment when dragging vertically while looking level
+        void dy;
+      }
     };
 
-    const onPointerUp = () => {
-      interactionRef.current.isDragging = false;
+    const onPointerUp = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
+      const wasTap = !stateRef.current.movedDuringTap;
+      stateRef.current.isDragging = false;
+
+      // In Scanning Mode, tapping anywhere on the camera view places the object at that spot!
+      if (stateRef.current.mrActive && !stateRef.current.isPlaced && wasTap) {
+        projectScreenPointToFloor(e.clientX, e.clientY, stateRef.current.targetPos);
+        stateRef.current.currentPos.copy(stateRef.current.targetPos);
+        confirmPlacement();
+      }
     };
 
+    // 2-finger pinch (scale) & 2-finger twist (Y-axis rotation)
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
-        interactionRef.current.isDragging = false;
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        interactionRef.current.pinchStartDist = Math.hypot(dx, dy);
-        interactionRef.current.pinchStartScale = interactionRef.current.modelScale;
+        stateRef.current.isDragging = false;
+        stateRef.current.movedDuringTap = true;
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        stateRef.current.pinchStartDist = Math.hypot(dx, dy);
+        stateRef.current.pinchStartScale = stateRef.current.modelScale;
+        stateRef.current.pinchStartAngle = Math.atan2(dy, dx);
+        stateRef.current.pinchStartYaw = stateRef.current.modelYaw;
       }
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && interactionRef.current.pinchStartDist > 0) {
+      if (e.touches.length === 2 && stateRef.current.pinchStartDist > 0) {
         e.preventDefault();
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
         const dist = Math.hypot(dx, dy);
-        const factor = dist / interactionRef.current.pinchStartDist;
-        interactionRef.current.modelScale = THREE.MathUtils.clamp(
-          interactionRef.current.pinchStartScale * factor,
-          0.3,
+        const factor = dist / stateRef.current.pinchStartDist;
+        stateRef.current.modelScale = THREE.MathUtils.clamp(
+          stateRef.current.pinchStartScale * factor,
+          0.25,
           3.5
         );
+
+        const angle = Math.atan2(dy, dx);
+        const deltaAngle = angle - stateRef.current.pinchStartAngle;
+        stateRef.current.modelYaw = stateRef.current.pinchStartYaw - deltaAngle;
       }
     };
 
@@ -429,8 +497,11 @@ export function MRTestViewer() {
         mixerRef.current.update(delta);
       }
 
-      const state = interactionRef.current;
+      const state = stateRef.current;
+
+      // 1. Update camera orientation from phone gyroscope (exact 360° viewer math)
       if (
+        state.mrActive &&
         state.gyroEnabled &&
         state.alpha !== null &&
         state.beta !== null &&
@@ -441,31 +512,56 @@ export function MRTestViewer() {
         const gammaRad = THREE.MathUtils.degToRad(state.gamma);
 
         const deviceEuler = new THREE.Euler(betaRad, alphaRad, -gammaRad, 'YXZ');
-        const deviceQuat = new THREE.Quaternion().setFromEuler(deviceEuler);
+        const deviceQuaternion = new THREE.Quaternion().setFromEuler(deviceEuler);
 
         const win = window as Window & { orientation?: number };
         const screenAngle =
           typeof win.orientation === 'number'
             ? win.orientation
             : win.screen?.orientation?.angle || 0;
-        const screenQuat = new THREE.Quaternion().setFromAxisAngle(
+        const screenQuaternion = new THREE.Quaternion().setFromAxisAngle(
           new THREE.Vector3(0, 0, 1),
           -THREE.MathUtils.degToRad(screenAngle)
         );
 
-        camera.quaternion.copy(deviceQuat).multiply(worldAlignment).multiply(screenQuat);
+        camera.quaternion
+          .copy(deviceQuaternion)
+          .multiply(worldAlignment)
+          .multiply(screenQuaternion);
       }
+
+      // 2. While scanning (!isPlaced) and not dragging, raycast screen center onto the floor
+      if (state.mrActive && !state.isPlaced && !state.isDragging) {
+        const rect = container.getBoundingClientRect();
+        projectScreenPointToFloor(
+          rect.left + rect.width / 2,
+          rect.top + rect.height * 0.56,
+          state.targetPos
+        );
+        // Face the camera while scanning
+        state.modelYaw = Math.atan2(-state.currentPos.x, -state.currentPos.z);
+      }
+
+      // 3. Smoothly interpolate floor position
+      state.currentPos.lerp(state.targetPos, 0.22);
 
       if (modelGroupRef.current) {
+        modelGroupRef.current.position.copy(state.currentPos);
         modelGroupRef.current.scale.setScalar(state.modelScale);
-        modelGroupRef.current.rotation.y = state.modelYaw;
-        modelGroupRef.current.rotation.x = state.modelPitch;
+        // Keep model strictly upright on the floor (only Y-axis yaw rotation!)
+        modelGroupRef.current.rotation.set(0, state.modelYaw, 0);
       }
 
-      if (reticleRef.current && modelGroupRef.current) {
-        reticleRef.current.position.x = modelGroupRef.current.position.x;
-        reticleRef.current.position.z = modelGroupRef.current.position.z;
-        reticleRef.current.scale.setScalar(state.modelScale);
+      if (reticleGroupRef.current) {
+        reticleGroupRef.current.position.set(
+          state.currentPos.x,
+          FLOOR_Y + 0.005,
+          state.currentPos.z
+        );
+        reticleGroupRef.current.scale.setScalar(state.modelScale);
+        // Show reticle while scanning or while dragging to move on the floor
+        reticleGroupRef.current.visible =
+          !state.mrActive || !state.isPlaced || (state.isDragging && state.dragMode === 'move');
       }
 
       renderer.render(scene, camera);
@@ -482,34 +578,60 @@ export function MRTestViewer() {
       container.removeEventListener('touchmove', onTouchMove);
       renderer.dispose();
     };
-  }, [selectedModel]);
+  }, [confirmPlacement, selectedModel, setModelGhostStyle]);
 
   return (
-    <div className="app-page min-h-dvh text-white font-sans flex flex-col">
-      {/* Header Bar */}
-      <header className="w-full max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 border-b border-white/10 z-20">
-        <div className="flex items-center gap-3 min-w-0">
-          <Link
-            href="/ARs"
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0"
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-            Back to Static AR
-          </Link>
-          <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-widest text-amber-400 font-semibold">
-              Microsoft Edge / Power Apps MR Test
-            </p>
-            <h1 className="text-base md:text-lg font-bold text-white truncate">
-              Mixed Reality GLB Viewer
-            </h1>
-          </div>
-        </div>
+    <div
+      ref={containerRef}
+      className="fixed inset-0 w-full h-dvh bg-[#0d041a] text-white font-sans overflow-hidden select-none"
+      style={{ touchAction: 'none' }}
+    >
+      {/* Full-Screen Rear Camera Feed */}
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        autoPlay
+        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
+          mrActive && !cameraError ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      />
 
-        {/* Model Switcher */}
-        <div className="flex items-center gap-1.5 bg-white/5 p-1 rounded-full border border-white/10">
+      {/* Full-Screen Transparent Three.js GLB Canvas */}
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-10" />
+
+      {/* Center Reticle Aim Prompt while Scanning */}
+      {mrActive && !isPlaced && !modelLoading && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-4 py-2 rounded-full bg-black/65 backdrop-blur-md border border-amber-400/40 text-amber-200 text-xs font-semibold text-center whitespace-nowrap shadow-lg">
+          Move phone to scan floor • Tap anywhere to place
+        </div>
+      )}
+
+      {mrActive && isPlaced && !modelLoading && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-4 py-1.5 rounded-full bg-black/55 backdrop-blur-md border border-white/15 text-white/85 text-xs font-medium text-center whitespace-nowrap shadow-lg">
+          {dragMode === 'move'
+            ? '1-finger drag: Slide on floor • 2-finger: Pinch / Twist'
+            : '1-finger drag: Rotate • 2-finger: Pinch scale'}
+        </div>
+      )}
+
+      {/* Top Floating Bar (Consistent Back Button + Model Switcher) */}
+      <header
+        className="absolute top-5 left-5 right-5 z-30 flex items-center justify-between gap-3 pointer-events-auto"
+        onPointerDown={e => e.stopPropagation()}
+      >
+        <Link
+          href="/ARs"
+          onClick={stopCameraStream}
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0 backdrop-blur-md shadow-lg"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+          Back to Static AR
+        </Link>
+
+        <div className="flex items-center gap-1 bg-black/55 backdrop-blur-md p-1 rounded-full border border-white/15 shadow-lg">
           {TEST_MODELS.map(m => (
             <button
               key={m.id}
@@ -518,7 +640,7 @@ export function MRTestViewer() {
               className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
                 selectedModel.id === m.id
                   ? 'bg-amber-500 text-black'
-                  : 'text-white/70 hover:text-white'
+                  : 'text-white/75 hover:text-white'
               }`}
             >
               {m.id === 'metering-cabinet' ? 'Cabinet' : 'Bike'}
@@ -527,164 +649,80 @@ export function MRTestViewer() {
         </div>
       </header>
 
-      {/* Main Mixed Reality Viewport */}
-      <main className="flex-1 flex flex-col lg:flex-row gap-4 max-w-7xl w-full mx-auto p-4 min-h-0">
-        {/* Live Camera + 3D GLB Overlay Viewport */}
-        <div
-          ref={containerRef}
-          className="relative flex-1 min-h-[62dvh] rounded-3xl overflow-hidden border border-white/15 bg-[#120924] shadow-2xl select-none"
-          style={{ touchAction: 'none' }}
-        >
-          {/* Rear Camera Feed (WebRTC - works inside Intune-managed Edge) */}
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            autoPlay
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
-              mrActive && !cameraError ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            }`}
-          />
-
-          {/* Transparent Three.js GLB Canvas */}
-          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-10" />
-
-          {/* Loading Spinner */}
-          {modelLoading && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
-              <div className="w-10 h-10 rounded-full border-4 border-white/10 border-t-amber-400 animate-spin mb-3" />
-              <p className="text-xs font-semibold text-white/80">Loading {selectedModel.name}...</p>
-            </div>
-          )}
-
-          {/* Top Status Pill */}
-          <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between gap-2 pointer-events-none">
-            <span className="px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-xs text-white/90 truncate">
-              {statusMsg}
-            </span>
-          </div>
-
-          {/* Bottom Mixed Reality Controls */}
-          <div className="absolute bottom-4 left-4 right-4 z-20 flex flex-wrap items-center justify-center gap-2.5">
-            {!mrActive ? (
-              <button
-                type="button"
-                onClick={startMixedReality}
-                className="px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm shadow-xl flex items-center gap-2 cursor-pointer"
-              >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                  <circle cx="12" cy="13" r="4" />
-                </svg>
-                View in Mixed Reality (Camera AR)
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={placeInFrontOfCamera}
-                  className="px-4 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs shadow-lg cursor-pointer"
-                >
-                  Place Here
-                </button>
-                {hasAnimations && (
-                  <button
-                    type="button"
-                    onClick={toggleAnimation}
-                    className="px-4 py-2.5 rounded-full bg-black/65 hover:bg-black/80 border border-white/20 text-white font-semibold text-xs shadow-lg backdrop-blur-md cursor-pointer"
-                  >
-                    {animPlaying ? 'Pause Animation' : 'Play Animation'}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    interactionRef.current.modelScale = 1;
-                    interactionRef.current.modelYaw = 0;
-                    interactionRef.current.modelPitch = 0;
-                  }}
-                  className="px-4 py-2.5 rounded-full bg-black/65 hover:bg-black/80 border border-white/20 text-white font-semibold text-xs shadow-lg backdrop-blur-md cursor-pointer"
-                >
-                  Reset Size
-                </button>
-                <button
-                  type="button"
-                  onClick={exitMixedReality}
-                  className="px-4 py-2.5 rounded-full bg-red-500/80 hover:bg-red-500 text-white font-semibold text-xs shadow-lg backdrop-blur-md cursor-pointer"
-                >
-                  Exit MR
-                </button>
-              </>
-            )}
-          </div>
+      {/* Loading Spinner */}
+      {modelLoading && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-none">
+          <div className="w-11 h-11 rounded-full border-4 border-white/10 border-t-amber-400 animate-spin mb-3" />
+          <p className="text-xs font-semibold text-white/85">Loading {selectedModel.name}...</p>
         </div>
+      )}
 
-        {/* Right / Bottom Test Panel for Other Microsoft / WebXR Modes */}
-        <aside className="w-full lg:w-80 rounded-3xl border border-white/10 bg-white/5 p-5 flex flex-col gap-4">
-          <div>
-            <h2 className="text-sm font-bold text-white mb-1">
-              Additional MR / AR Mode Tests
-            </h2>
-            <p className="text-xs text-white/60">
-              Test which AR pipelines your managed iPhone allows inside Microsoft Edge:
-            </p>
-          </div>
-
-          {/* 1. Native WebXR immersive-ar test */}
-          <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-semibold text-white">1. Native WebXR (immersive-ar)</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                webXRSupported ? 'bg-teal-500/20 text-teal-300' : 'bg-white/10 text-white/50'
-              }`}>
-                {webXRSupported === null ? 'Checking...' : webXRSupported ? 'Supported' : 'Not detected'}
-              </span>
-            </div>
+      {/* Bottom Floating Mixed Reality Controls */}
+      <div
+        className="absolute bottom-7 left-4 right-4 z-30 flex flex-wrap items-center justify-center gap-2.5 pointer-events-auto"
+        onPointerDown={e => e.stopPropagation()}
+      >
+        {!mrActive ? (
+          <button
+            type="button"
+            onClick={startMixedReality}
+            className="px-7 py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm shadow-2xl flex items-center gap-2.5 cursor-pointer"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
+            </svg>
+            Start Mixed Reality Camera
+          </button>
+        ) : !isPlaced ? (
+          <button
+            type="button"
+            onClick={confirmPlacement}
+            className="px-8 py-4 rounded-full bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm shadow-2xl flex items-center gap-2 cursor-pointer"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-black animate-ping" />
+            Place Here
+          </button>
+        ) : (
+          <>
             <button
               type="button"
-              onClick={launchNativeWebXR}
-              className="w-full mt-2 py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-semibold text-white transition-colors cursor-pointer"
+              onClick={enterRescanMode}
+              className="px-4 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs shadow-lg cursor-pointer"
             >
-              Test WebXR Session
+              Re-Scan / Move Spot
             </button>
-          </div>
 
-          {/* 2. <model-viewer> GLB/USDZ AR bridge */}
-          <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
-            <p className="text-xs font-semibold text-white mb-1">
-              2. Model-Viewer AR Bridge (GLB + USDZ)
-            </p>
-            <p className="text-[11px] text-white/55 mb-2">
-              Tap the cube icon inside the box below to test Model-Viewer&apos;s built-in AR launcher:
-            </p>
-            <div
-              className="w-full h-40 rounded-xl overflow-hidden bg-black/40 border border-white/10"
-              dangerouslySetInnerHTML={{
-                __html: `<model-viewer src="${selectedModel.glbUrl}" ios-src="${selectedModel.usdzUrl}" ar ar-modes="webxr scene-viewer quick-look" camera-controls style="width:100%;height:100%;background-color:transparent;"></model-viewer>`,
-              }}
-            />
-          </div>
+            <button
+              type="button"
+              onClick={() => setDragMode(d => (d === 'move' ? 'rotate' : 'move'))}
+              className="px-4 py-2.5 rounded-full bg-black/65 hover:bg-black/80 border border-white/20 text-white font-semibold text-xs shadow-lg backdrop-blur-md cursor-pointer"
+            >
+              {dragMode === 'move' ? 'Mode: Slide on Floor' : 'Mode: Rotate Y'}
+            </button>
 
-          {/* 3. Microsoft Power Apps ms-apps:// protocol test */}
-          <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
-            <p className="text-xs font-semibold text-white mb-1">
-              3. Power Apps Managed App Handoff
-            </p>
-            <p className="text-[11px] text-white/55 mb-2">
-              Tests if Intune allows Edge to open the managed Power Apps mobile app (`ms-apps://`):
-            </p>
+            {hasAnimations && (
+              <button
+                type="button"
+                onClick={toggleAnimation}
+                className="px-4 py-2.5 rounded-full bg-black/65 hover:bg-black/80 border border-white/20 text-white font-semibold text-xs shadow-lg backdrop-blur-md cursor-pointer"
+              >
+                {animPlaying ? 'Pause Anim' : 'Play Anim'}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => {
-                window.location.href = 'ms-apps://';
+                stateRef.current.modelScale = 1;
               }}
-              className="w-full py-2.5 px-4 rounded-xl bg-indigo-500/25 hover:bg-indigo-500/35 border border-indigo-400/35 text-xs font-semibold text-indigo-200 transition-colors cursor-pointer"
+              className="px-3.5 py-2.5 rounded-full bg-black/65 hover:bg-black/80 border border-white/20 text-white/85 font-semibold text-xs shadow-lg backdrop-blur-md cursor-pointer"
             >
-              Test Open Power Apps (ms-apps://)
+              1x Scale
             </button>
-          </div>
-        </aside>
-      </main>
+          </>
+        )}
+      </div>
     </div>
   );
 }
