@@ -12,6 +12,54 @@ type DownloadState = 'idle' | 'downloaded';
 const AR_RETURN_PENDING_KEY = 'ar_quicklook_return_path';
 const emptySubscribe = () => () => {};
 
+/** Files already fully downloaded in this session (kept across client-side navigation). */
+const preloadedUrls = new Set<string>();
+const inflightPreloads = new Map<string, Promise<void>>();
+
+/**
+ * Downloads the AR file once with real progress. The bytes are discarded — the point is to
+ * fill the browser's HTTP cache so Quick Look opens from cache instead of downloading again.
+ * `force-cache` reuses any copy already cached, even if older than the server's 10-minute max-age.
+ */
+function preloadAsset(url: string, onProgress: (progress: number | null) => void): Promise<void> {
+  if (preloadedUrls.has(url)) {
+    onProgress(100);
+    return Promise.resolve();
+  }
+  const existing = inflightPreloads.get(url);
+  if (existing) return existing;
+
+  const task = (async () => {
+    try {
+      const response = await fetch(url, { cache: 'force-cache' });
+      const total = Number(response.headers.get('content-length')) || 0;
+      if (!response.body) {
+        await response.arrayBuffer();
+      } else {
+        const reader = response.body.getReader();
+        let received = 0;
+        onProgress(total ? 0 : null);
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received += value.byteLength;
+          if (total) onProgress(Math.min(99, Math.round((received / total) * 100)));
+        }
+      }
+      preloadedUrls.add(url);
+    } catch (err) {
+      // If preloading fails, fall back to letting Quick Look download the file itself.
+      console.warn('AR preload failed, falling back to direct launch:', err);
+    } finally {
+      inflightPreloads.delete(url);
+      onProgress(100);
+    }
+  })();
+
+  inflightPreloads.set(url, task);
+  return task;
+}
+
 function getBrowserModeSnapshot(): BrowserMode {
   const ua = navigator.userAgent;
   const isIOS =
@@ -50,8 +98,37 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
   const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
   const [isLaunching, setIsLaunching] = useState(false);
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
+  const [loadState, setLoadState] = useState<'loading' | 'ready'>(() =>
+    preloadedUrls.has(item.fileUrl) ? 'ready' : 'loading'
+  );
+  // 0–100 when the size is known, null while the size is unknown.
+  const [loadProgress, setLoadProgress] = useState<number | null>(() =>
+    preloadedUrls.has(item.fileUrl) ? 100 : 0
+  );
   const arLinkRef = useRef<HTMLAnchorElement>(null);
   const autoTriggeredRef = useRef(false);
+  const pendingLaunchRef = useRef(false);
+
+  /** Opens Quick Look by navigating to the (now cached) file — works without a fresh tap. */
+  const launchQuickLook = useCallback(() => {
+    setIsLaunching(true);
+    try {
+      sessionStorage.setItem(AR_RETURN_PENDING_KEY, window.location.pathname);
+    } catch {
+      // Ignore storage errors.
+    }
+    window.location.href = item.fileUrl;
+    setTimeout(() => {
+      setIsLaunching(false);
+      if (document.visibilityState === 'visible') {
+        try {
+          sessionStorage.removeItem(AR_RETURN_PENDING_KEY);
+        } catch {
+          // Ignore storage errors.
+        }
+      }
+    }, 2500);
+  }, [item.fileUrl]);
 
   const triggerFileDownload = useCallback(() => {
     const downloadAnchor = document.createElement('a');
@@ -100,33 +177,24 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
         // Ignore storage errors.
       }
 
-      if (returnedFromQuickLook) {
-        return;
-      }
+      // Auto-open Quick Look once the file has finished preloading (skip when returning from Quick Look).
+      pendingLaunchRef.current = !returnedFromQuickLook;
 
-      const timer = setTimeout(() => {
-        setIsLaunching(true);
-        try {
-          sessionStorage.setItem(AR_RETURN_PENDING_KEY, window.location.pathname);
-        } catch {
-          // Ignore storage errors.
+      let cancelled = false;
+      preloadAsset(item.fileUrl, progress => {
+        if (!cancelled) setLoadProgress(progress);
+      }).then(() => {
+        if (cancelled) return;
+        setLoadState('ready');
+        if (pendingLaunchRef.current) {
+          pendingLaunchRef.current = false;
+          launchQuickLook();
         }
-        // Direct navigation launches iOS Quick Look reliably without requiring a second tap.
-        window.location.href = item.fileUrl;
+      });
 
-        setTimeout(() => {
-          setIsLaunching(false);
-          if (document.visibilityState === 'visible') {
-            try {
-              sessionStorage.removeItem(AR_RETURN_PENDING_KEY);
-            } catch {
-              // Ignore storage errors.
-            }
-          }
-        }, 2000);
-      }, 80);
-
-      return () => clearTimeout(timer);
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (browserMode === 'ios-download') {
@@ -136,7 +204,7 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
       }, 120);
       return () => clearTimeout(timer);
     }
-  }, [browserMode, item.fileUrl, triggerFileDownload]);
+  }, [browserMode, item.fileUrl, launchQuickLook, triggerFileDownload]);
 
   const clearReturnFlag = () => {
     try {
@@ -203,12 +271,24 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
               ref={arLinkRef}
               href={item.fileUrl}
               rel="ar"
-              className="relative inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors shadow-lg"
-              onClick={() => {
+              aria-busy={loadState === 'loading'}
+              className={`relative overflow-hidden inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl font-semibold text-sm shadow-lg transition-colors duration-300 ${
+                loadState === 'ready'
+                  ? 'bg-amber-500 hover:bg-amber-400 text-black'
+                  : 'bg-amber-950/60 border border-amber-500/30 text-white'
+              }`}
+              onClick={e => {
+                if (loadState !== 'ready') {
+                  // Still downloading: don't start a second download — open as soon as it finishes.
+                  e.preventDefault();
+                  pendingLaunchRef.current = true;
+                  return;
+                }
                 setIsLaunching(true);
                 setTimeout(() => setIsLaunching(false), 3000);
               }}
             >
+              {/* Must stay the first child: iOS requires an <img> inside rel="ar" links. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={`${BASE_PATH}/immersive-qr-code.png`}
@@ -217,7 +297,22 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
                 height={1}
                 style={{ position: 'absolute', width: 1, height: 1, opacity: 0.01, pointerEvents: 'none' }}
               />
-              {isLaunching ? 'Opening AR Experience...' : 'View AR Experience'}
+              {loadState === 'loading' && (
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-y-0 left-0 bg-amber-500 transition-[width] duration-300 ease-out ${
+                    loadProgress === null ? 'w-full animate-pulse opacity-60' : ''
+                  }`}
+                  style={loadProgress === null ? undefined : { width: `${loadProgress}%` }}
+                />
+              )}
+              <span className="relative z-10 drop-shadow-sm">
+                {loadState === 'loading'
+                  ? `Loading AR Experience${loadProgress ? ` ${loadProgress}%` : '...'}`
+                  : isLaunching
+                    ? 'Opening AR Experience...'
+                    : 'View AR Experience'}
+              </span>
             </a>
           </div>
         </main>

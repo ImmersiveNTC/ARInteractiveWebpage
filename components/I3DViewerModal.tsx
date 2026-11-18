@@ -596,7 +596,7 @@ export function I3DViewerModal({
         embedded
           ? "relative w-full h-full min-h-[420px] bg-[#666666] flex flex-col overflow-hidden rounded-3xl border border-white/10"
           : isStandalone
-            ? "relative w-full h-screen bg-[#666666] flex flex-col overflow-hidden"
+            ? "relative w-full h-dvh bg-[#666666] flex flex-col overflow-hidden"
             : "relative w-full h-full max-w-7xl max-h-[90vh] bg-[#666666] rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col"
       }
     >

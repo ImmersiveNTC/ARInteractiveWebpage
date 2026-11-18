@@ -450,7 +450,7 @@ export function VR360ViewerModal({
   const isStandalone = Boolean(backHref) && !onClose;
 
   return (
-    <div className={isStandalone ? "relative w-full h-screen flex items-center justify-center bg-black overflow-hidden select-none" : "fixed inset-0 z-[120] flex items-center justify-center bg-black overflow-hidden select-none"}>
+    <div className={isStandalone ? "relative w-full h-dvh flex items-center justify-center bg-black overflow-hidden select-none" : "fixed inset-0 z-[120] flex items-center justify-center bg-black overflow-hidden select-none"}>
       
       {/* Hidden Video element for Three.js VideoTexture */}
       {isVideo && (
