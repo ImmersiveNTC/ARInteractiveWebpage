@@ -471,16 +471,24 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
             <div className="mt-5 pt-5 border-t border-white/10">
               <Link
                 href="/MRTest"
-                onClick={() => {
+                onClick={async () => {
                   const win = window as unknown as {
                     DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
                     DeviceMotionEvent?: { requestPermission?: () => Promise<string> };
                   };
                   if (win.DeviceOrientationEvent && typeof win.DeviceOrientationEvent.requestPermission === 'function') {
-                    win.DeviceOrientationEvent.requestPermission().catch(() => {});
+                    try {
+                      await win.DeviceOrientationEvent.requestPermission();
+                    } catch {
+                      // Ignore if denied
+                    }
                   }
                   if (win.DeviceMotionEvent && typeof win.DeviceMotionEvent.requestPermission === 'function') {
-                    win.DeviceMotionEvent.requestPermission().catch(() => {});
+                    try {
+                      await win.DeviceMotionEvent.requestPermission();
+                    } catch {
+                      // Ignore if denied
+                    }
                   }
                 }}
                 className="inline-flex items-center justify-center gap-2 w-full py-3 px-5 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 font-semibold text-xs transition-colors"
