@@ -487,9 +487,9 @@ export function VR360ViewerModal({
         {backHref && (
           <Link
             href={backHref}
-            className="px-4 h-11 rounded-full bg-black/40 border border-white/15 hover:bg-black/80 hover:border-white/30 transition-all flex items-center gap-1.5 text-sm font-medium text-white shadow-lg backdrop-blur-md"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0 backdrop-blur-md"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6" />
             </svg>
             {backLabel}

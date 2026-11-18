@@ -1,12 +1,40 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { QRCode } from 'react-qrcode-logo';
 import { AssetItem, BASE_PATH } from '../lib/assetTypes';
 import { I3DStandaloneViewer } from './I3DStandaloneViewer';
 
-type BrowserMode = 'loading' | 'ios-safari-chrome' | 'ios-edge' | 'ios-firefox' | 'desktop';
+type BrowserMode = 'loading' | 'ios-safari-chrome' | 'ios-download' | 'desktop';
+type DownloadState = 'idle' | 'downloaded';
+
+const AR_RETURN_PENDING_KEY = 'ar_quicklook_return_path';
+const emptySubscribe = () => () => {};
+
+function getBrowserModeSnapshot(): BrowserMode {
+  const ua = navigator.userAgent;
+  const isIOS =
+    (/iPad|iPhone|iPod/.test(ua) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) &&
+    !(window as Window & { MSStream?: unknown }).MSStream;
+
+  if (!isIOS) return 'desktop';
+  if (/EdgiOS|FxiOS|OPiOS/.test(ua)) return 'ios-download';
+  return 'ios-safari-chrome';
+}
+
+function getServerBrowserMode(): BrowserMode {
+  return 'loading';
+}
+
+function getPageUrlSnapshot(): string {
+  return window.location.href;
+}
+
+function getServerPageUrl(): string {
+  return '';
+}
 
 type ARItemViewProps = {
   item: AssetItem;
@@ -15,36 +43,41 @@ type ARItemViewProps = {
   galleryTitle: string;
 };
 
-/** Standalone shareable page for an individual AR USDZ model. */
+/** Standalone shareable page for an individual AR asset. */
 export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemViewProps) {
   const fileExtLabel = (item.fileName.split('.').pop() || 'USDZ').toUpperCase();
-  const [browserMode, setBrowserMode] = useState<BrowserMode>('loading');
-  const [pageUrl, setPageUrl] = useState('');
+  const browserMode = useSyncExternalStore(emptySubscribe, getBrowserModeSnapshot, getServerBrowserMode);
+  const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [downloadState, setDownloadState] = useState<DownloadState>('idle');
   const arLinkRef = useRef<HTMLAnchorElement>(null);
   const autoTriggeredRef = useRef(false);
 
+  const triggerFileDownload = useCallback(() => {
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.href = item.fileUrl;
+    downloadAnchor.download = item.fileName;
+    downloadAnchor.style.display = 'none';
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    setDownloadState('downloaded');
+  }, [item.fileName, item.fileUrl]);
+
   useEffect(() => {
-    const ua = navigator.userAgent;
-    const isIOS =
-      (/iPad|iPhone|iPod/.test(ua) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) &&
-      !(window as Window & { MSStream?: unknown }).MSStream;
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        try {
+          sessionStorage.removeItem(AR_RETURN_PENDING_KEY);
+        } catch {
+          // Ignore storage access errors in private browsing.
+        }
+        setIsLaunching(false);
+      }
+    };
 
-    setPageUrl(window.location.href);
-
-    if (!isIOS) {
-      setBrowserMode('desktop');
-      return;
-    }
-
-    if (ua.includes('EdgiOS')) {
-      setBrowserMode('ios-edge');
-    } else if (ua.includes('FxiOS')) {
-      setBrowserMode('ios-firefox');
-    } else {
-      setBrowserMode('ios-safari-chrome');
-    }
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
   }, []);
 
   useEffect(() => {
@@ -52,53 +85,98 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
 
     if (browserMode === 'ios-safari-chrome') {
       autoTriggeredRef.current = true;
+
+      let returnedFromQuickLook = false;
+      try {
+        const navEntry = performance.getEntriesByType('navigation')[0] as
+          | PerformanceNavigationTiming
+          | undefined;
+        const pendingPath = sessionStorage.getItem(AR_RETURN_PENDING_KEY);
+        if (pendingPath === window.location.pathname || navEntry?.type === 'back_forward') {
+          sessionStorage.removeItem(AR_RETURN_PENDING_KEY);
+          returnedFromQuickLook = true;
+        }
+      } catch {
+        // Ignore storage errors.
+      }
+
+      if (returnedFromQuickLook) {
+        return;
+      }
+
       const timer = setTimeout(() => {
         setIsLaunching(true);
-        arLinkRef.current?.click();
-        setTimeout(() => setIsLaunching(false), 3000);
-      }, 120);
+        try {
+          sessionStorage.setItem(AR_RETURN_PENDING_KEY, window.location.pathname);
+        } catch {
+          // Ignore storage errors.
+        }
+        // Direct navigation launches iOS Quick Look reliably without requiring a second tap.
+        window.location.href = item.fileUrl;
+
+        setTimeout(() => {
+          setIsLaunching(false);
+          if (document.visibilityState === 'visible') {
+            try {
+              sessionStorage.removeItem(AR_RETURN_PENDING_KEY);
+            } catch {
+              // Ignore storage errors.
+            }
+          }
+        }, 2000);
+      }, 80);
+
       return () => clearTimeout(timer);
     }
 
-    if (browserMode === 'ios-edge') {
+    if (browserMode === 'ios-download') {
       autoTriggeredRef.current = true;
       const timer = setTimeout(() => {
-        setIsLaunching(true);
-        const downloadAnchor = document.createElement('a');
-        downloadAnchor.href = item.fileUrl;
-        downloadAnchor.download = item.fileName;
-        downloadAnchor.style.display = 'none';
-        document.body.appendChild(downloadAnchor);
-        downloadAnchor.click();
-        downloadAnchor.remove();
-        setTimeout(() => setIsLaunching(false), 3500);
+        triggerFileDownload();
       }, 120);
       return () => clearTimeout(timer);
     }
-  }, [browserMode, item.fileName, item.fileUrl]);
+  }, [browserMode, item.fileUrl, triggerFileDownload]);
+
+  const clearReturnFlag = () => {
+    try {
+      sessionStorage.removeItem(AR_RETURN_PENDING_KEY);
+    } catch {
+      // Ignore storage errors.
+    }
+  };
 
   return (
     <div className="app-page min-h-screen text-white font-sans flex flex-col">
       {/* Top Bar */}
-      <header className="w-full max-w-7xl mx-auto px-6 py-5 flex items-center justify-between gap-4 border-b border-white/10">
+      <header className="w-full max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 border-b border-white/10">
         <div className="flex items-center gap-4 min-w-0">
           <Link
             href={backHref}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0"
+            onClick={clearReturnFlag}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0"
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6" />
             </svg>
             {backLabel}
           </Link>
-          <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-widest text-amber-400/80 font-semibold">{galleryTitle}</p>
-            <h1 className="text-lg md:text-xl font-bold text-white truncate">{item.displayName}</h1>
-          </div>
+          {browserMode === 'desktop' && (
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-widest text-amber-400/80 font-semibold">{galleryTitle}</p>
+              <h1 className="text-lg md:text-xl font-bold text-white truncate">{item.displayName}</h1>
+            </div>
+          )}
         </div>
-        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/15 border border-amber-500/30 text-amber-300 shrink-0">
-          {item.category}
-        </span>
+        {browserMode === 'desktop' ? (
+          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/15 border border-amber-500/30 text-amber-300 shrink-0">
+            {item.category}
+          </span>
+        ) : (
+          <span className="text-xs font-semibold uppercase tracking-widest text-amber-400/80 truncate">
+            {galleryTitle}
+          </span>
+        )}
       </header>
 
       {/* Main Content */}
@@ -108,7 +186,7 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
         </main>
       )}
 
-      {(browserMode === 'ios-safari-chrome' || browserMode === 'ios-edge' || browserMode === 'ios-firefox') && (
+      {browserMode === 'ios-safari-chrome' && (
         <main className="flex-1 flex items-center justify-center p-6">
           <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 text-center shadow-2xl">
             <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-300">
@@ -119,69 +197,76 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
               </svg>
             </div>
 
-            <h2 className="text-2xl font-bold text-white mb-2">{item.displayName}</h2>
-            <p className="text-sm text-white/60 mb-6">
-              {browserMode === 'ios-firefox'
-                ? `AR Quick Look is not supported in Firefox on iOS. Open this link in Safari, Chrome, or Edge, or download the ${fileExtLabel} model below.`
-                : browserMode === 'ios-edge'
-                  ? `Microsoft Edge detected — downloading the ${fileExtLabel} model so you can open it in AR Quick Look.`
-                  : 'Opening AR Quick Look on your iPhone. If it does not open automatically, tap the button below.'}
-            </p>
-
-            {browserMode === 'ios-safari-chrome' && (
-              <a
-                ref={arLinkRef}
-                href={item.fileUrl}
-                rel="ar"
-                className="relative inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors shadow-lg"
-                onClick={() => {
-                  setIsLaunching(true);
-                  setTimeout(() => setIsLaunching(false), 3000);
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`${BASE_PATH}/immersive-qr-code.png`}
-                  alt=""
-                  width={1}
-                  height={1}
-                  style={{ position: 'absolute', width: 1, height: 1, opacity: 0.01, pointerEvents: 'none' }}
-                />
-                {isLaunching ? 'Launching AR Quick Look...' : 'View in AR Quick Look'}
-              </a>
-            )}
-
-            {browserMode === 'ios-edge' && (
-              <a
-                href={item.fileUrl}
-                rel="ar"
-                target="_blank"
-                download={item.fileName}
-                className="relative inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors shadow-lg"
-                onClick={() => {
-                  setIsLaunching(true);
-                  setTimeout(() => setIsLaunching(false), 3500);
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`${BASE_PATH}/immersive-qr-code.png`}
-                  alt=""
-                  width={1}
-                  height={1}
-                  style={{ position: 'absolute', width: 1, height: 1, opacity: 0.01, pointerEvents: 'none' }}
-                />
-                {isLaunching ? 'Starting USDZ Download...' : 'Open / Download AR Model'}
-              </a>
-            )}
+            <h1 className="text-2xl font-bold text-white mb-6">{item.displayName}</h1>
 
             <a
+              ref={arLinkRef}
               href={item.fileUrl}
-              download={item.fileName}
-              className="mt-3 inline-flex items-center justify-center gap-2 w-full py-3 px-5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-white/85 text-sm font-medium transition-colors"
+              rel="ar"
+              className="relative inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors shadow-lg"
+              onClick={() => {
+                setIsLaunching(true);
+                setTimeout(() => setIsLaunching(false), 3000);
+              }}
             >
-              Download {fileExtLabel}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`${BASE_PATH}/immersive-qr-code.png`}
+                alt=""
+                width={1}
+                height={1}
+                style={{ position: 'absolute', width: 1, height: 1, opacity: 0.01, pointerEvents: 'none' }}
+              />
+              {isLaunching ? 'Opening AR Experience...' : 'View AR Experience'}
             </a>
+          </div>
+        </main>
+      )}
+
+      {browserMode === 'ios-download' && (
+        <main className="flex-1 flex items-center justify-center p-6">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 text-center shadow-2xl">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-300">
+              <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+            </div>
+
+            <h1 className="text-2xl font-bold text-white mb-2">{item.displayName}</h1>
+            <p className="text-sm text-white/60 mb-6">
+              {downloadState === 'downloaded'
+                ? 'Your AR file download has started. Open it from your browser\u2019s Downloads to view it in AR.'
+                : 'Download the AR file, then open it from your browser\u2019s Downloads to view it in AR.'}
+            </p>
+
+            {downloadState !== 'downloaded' ? (
+              <button
+                type="button"
+                onClick={triggerFileDownload}
+                className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors shadow-lg cursor-pointer"
+              >
+                Download AR Experience
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl bg-white/10 border border-white/15 text-white/60 font-semibold text-sm cursor-default"
+                >
+                  Downloaded — Open from Downloads
+                </button>
+                <button
+                  type="button"
+                  onClick={triggerFileDownload}
+                  className="mt-4 inline-block text-xs text-amber-300/80 hover:text-amber-300 underline underline-offset-4 transition-colors cursor-pointer"
+                >
+                  Didn&apos;t start? Download AR Experience
+                </button>
+              </>
+            )}
           </div>
         </main>
       )}

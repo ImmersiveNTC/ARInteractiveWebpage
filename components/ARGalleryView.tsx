@@ -54,6 +54,14 @@ export function ARGalleryView({
 }: ARGalleryViewProps) {
   const isIOS = useIsIOS();
 
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem('ar_quicklook_return_path');
+    } catch {
+      // Ignore storage access errors.
+    }
+  }, []);
+
   return (
     <div className="app-page min-h-screen text-white font-sans flex flex-col">
       <GalleryNav activePage={activePage} />
