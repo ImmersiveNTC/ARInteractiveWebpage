@@ -95,13 +95,15 @@ export function ARGalleryView({
             <Link
               href="/MRTest"
               onClick={() => {
-                const DeviceOrientation = (
-                  window as unknown as {
-                    DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
-                  }
-                ).DeviceOrientationEvent;
-                if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
-                  DeviceOrientation.requestPermission().catch(() => {});
+                const win = window as unknown as {
+                  DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
+                  DeviceMotionEvent?: { requestPermission?: () => Promise<string> };
+                };
+                if (win.DeviceOrientationEvent && typeof win.DeviceOrientationEvent.requestPermission === 'function') {
+                  win.DeviceOrientationEvent.requestPermission().catch(() => {});
+                }
+                if (win.DeviceMotionEvent && typeof win.DeviceMotionEvent.requestPermission === 'function') {
+                  win.DeviceMotionEvent.requestPermission().catch(() => {});
                 }
               }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 text-xs font-semibold transition-colors"

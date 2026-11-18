@@ -472,13 +472,15 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
               <Link
                 href="/MRTest"
                 onClick={() => {
-                  const DeviceOrientation = (
-                    window as unknown as {
-                      DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
-                    }
-                  ).DeviceOrientationEvent;
-                  if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
-                    DeviceOrientation.requestPermission().catch(() => {});
+                  const win = window as unknown as {
+                    DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
+                    DeviceMotionEvent?: { requestPermission?: () => Promise<string> };
+                  };
+                  if (win.DeviceOrientationEvent && typeof win.DeviceOrientationEvent.requestPermission === 'function') {
+                    win.DeviceOrientationEvent.requestPermission().catch(() => {});
+                  }
+                  if (win.DeviceMotionEvent && typeof win.DeviceMotionEvent.requestPermission === 'function') {
+                    win.DeviceMotionEvent.requestPermission().catch(() => {});
                   }
                 }}
                 className="inline-flex items-center justify-center gap-2 w-full py-3 px-5 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 font-semibold text-xs transition-colors"

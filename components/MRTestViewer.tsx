@@ -9,6 +9,10 @@ import { BASE_PATH } from '../lib/assetTypes';
 const CABINET_GLB_URL = `${BASE_PATH}/3Dassets/${encodeURIComponent('Metering Cabinet-3Di.glb')}`;
 const FLOOR_Y = -1.15;
 
+// Offscreen optical-flow grid dimensions for 6DoF ground translation tracking
+const FLOW_W = 80;
+const FLOW_H = 60;
+
 export function MRTestViewer() {
   const [isPlaced, setIsPlaced] = useState(false);
   const [modelLoading, setModelLoading] = useState(true);
@@ -29,13 +33,23 @@ export function MRTestViewer() {
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionsRef = useRef<THREE.AnimationAction[]>([]);
 
-  // Mutable interaction state accessed inside requestAnimationFrame & touch handlers
+  // Mutable interaction & 6DoF tracking state accessed inside requestAnimationFrame
   const stateRef = useRef({
     isPlaced: false,
     gyroReceived: false,
     alpha: null as number | null,
     beta: null as number | null,
     gamma: null as number | null,
+    // 6DoF camera world position & velocity
+    camPos: new THREE.Vector3(0, 0, 0),
+    camVel: new THREE.Vector3(0, 0, 0),
+    prevCamQuat: new THREE.Quaternion(),
+    hasPrevQuat: false,
+    // IMU linear acceleration (world-aligned & motion energy gate)
+    imuAccelLocal: new THREE.Vector3(0, 0, 0),
+    imuMotionEnergy: 0,
+    lastImuTimestamp: 0,
+    // Placed model transform
     targetPos: new THREE.Vector3(0, FLOOR_Y, -2.2),
     currentPos: new THREE.Vector3(0, FLOOR_Y, -2.2),
     modelYaw: 0,
@@ -95,7 +109,7 @@ export function MRTestViewer() {
 
     initCamera();
 
-    // Check if iOS requires a tap for DeviceOrientation permission (when page is opened directly)
+    // Check if iOS requires a tap for DeviceOrientation / DeviceMotion permission
     const timer = window.setTimeout(() => {
       if (cancelled || stateRef.current.gyroReceived) return;
       const DeviceOrientation = (
@@ -116,14 +130,20 @@ export function MRTestViewer() {
   }, [stopCameraStream]);
 
   const requestMotionOnTap = async () => {
-    const DeviceOrientation = (
-      window as unknown as {
-        DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
-      }
-    ).DeviceOrientationEvent;
-    if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
+    const win = window as unknown as {
+      DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
+      DeviceMotionEvent?: { requestPermission?: () => Promise<string> };
+    };
+    if (win.DeviceOrientationEvent && typeof win.DeviceOrientationEvent.requestPermission === 'function') {
       try {
-        await DeviceOrientation.requestPermission();
+        await win.DeviceOrientationEvent.requestPermission();
+      } catch {
+        // Ignore if denied
+      }
+    }
+    if (win.DeviceMotionEvent && typeof win.DeviceMotionEvent.requestPermission === 'function') {
+      try {
+        await win.DeviceMotionEvent.requestPermission();
       } catch {
         // Ignore if denied
       }
@@ -144,7 +164,7 @@ export function MRTestViewer() {
     setAnimPlaying(nextState);
   };
 
-  // Three.js Scene + Reticle Pointer + Floor Placement & Gesture Controls
+  // Three.js Scene + 6DoF Optical-Flow/IMU Ground Tracker + Floor Placement
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -169,6 +189,14 @@ export function MRTestViewer() {
     renderer.setSize(width, height);
     renderer.setClearColor(0x000000, 0);
     rendererRef.current = renderer;
+
+    // Offscreen 2D canvas for real-time ground optical flow (6DoF translation tracking)
+    const flowCanvas = document.createElement('canvas');
+    flowCanvas.width = FLOW_W;
+    flowCanvas.height = FLOW_H;
+    const flowCtx = flowCanvas.getContext('2d', { willReadFrequently: true });
+    let prevGray: Uint8Array | null = null;
+    const currGray = new Uint8Array(FLOW_W * FLOW_H);
 
     // Studio lighting
     scene.add(new THREE.AmbientLight(0xffffff, 1.55));
@@ -264,7 +292,7 @@ export function MRTestViewer() {
       }
     );
 
-    // Gyroscope orientation listener
+    // Gyroscope orientation listener (3DoF rotation)
     const onDeviceOrientation = (e: DeviceOrientationEvent) => {
       if (e.alpha === null || e.beta === null || e.gamma === null) return;
       stateRef.current.gyroReceived = true;
@@ -274,7 +302,23 @@ export function MRTestViewer() {
     };
     window.addEventListener('deviceorientation', onDeviceOrientation, true);
 
-    // Raycast helper onto horizontal floor plane (Y = FLOOR_Y)
+    // Accelerometer listener (6DoF motion energy gate + linear translation assist)
+    const onDeviceMotion = (e: DeviceMotionEvent) => {
+      const acc = e.acceleration;
+      if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
+      const ax = acc.x;
+      const ay = acc.y;
+      const az = acc.z;
+      const mag = Math.hypot(ax, ay, az);
+      const st = stateRef.current;
+      // Exponential moving average of linear acceleration energy to detect walking vs standing still
+      st.imuMotionEnergy = st.imuMotionEnergy * 0.82 + mag * 0.18;
+      st.imuAccelLocal.set(ax, ay, az);
+      st.lastImuTimestamp = performance.now();
+    };
+    window.addEventListener('devicemotion', onDeviceMotion, true);
+
+    // Raycast helper onto horizontal floor plane (Y = FLOOR_Y), relative to current 6DoF camera position
     const raycaster = new THREE.Raycaster();
     const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -FLOOR_Y);
     const hitVec = new THREE.Vector3();
@@ -285,34 +329,39 @@ export function MRTestViewer() {
       const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
 
+      const camX = camera.position.x;
+      const camZ = camera.position.z;
       const dir = raycaster.ray.direction;
+
       if (dir.y < -0.04) {
         const hit = raycaster.ray.intersectPlane(floorPlane, hitVec);
         if (hit) {
-          const dist = Math.hypot(hit.x, hit.z);
+          let relX = hit.x - camX;
+          let relZ = hit.z - camZ;
+          const dist = Math.hypot(relX, relZ);
           if (dist > 7.5) {
             const s = 7.5 / dist;
-            hit.x *= s;
-            hit.z *= s;
-          } else if (dist < 0.75) {
-            const s = 0.75 / Math.max(dist, 0.001);
-            hit.x *= s;
-            hit.z *= s;
+            relX *= s;
+            relZ *= s;
+          } else if (dist < 0.65) {
+            const s = 0.65 / Math.max(dist, 0.001);
+            relX *= s;
+            relZ *= s;
           }
-          out.set(hit.x, FLOOR_Y, hit.z);
+          out.set(camX + relX, FLOOR_Y, camZ + relZ);
           return true;
         }
       }
 
       const currentDist = Math.hypot(
-        stateRef.current.currentPos.x,
-        stateRef.current.currentPos.z
+        stateRef.current.currentPos.x - camX,
+        stateRef.current.currentPos.z - camZ
       );
-      const d = THREE.MathUtils.clamp(currentDist || 2.2, 1.2, 4.5);
+      const d = THREE.MathUtils.clamp(currentDist || 2.2, 1.1, 4.5);
       const horiz = new THREE.Vector3(dir.x, 0, dir.z);
       if (horiz.lengthSq() > 0.0001) {
         horiz.normalize();
-        out.set(horiz.x * d, FLOOR_Y, horiz.z * d);
+        out.set(camX + horiz.x * d, FLOOR_Y, camZ + horiz.z * d);
         return true;
       }
       return false;
@@ -353,8 +402,8 @@ export function MRTestViewer() {
       if (!stateRef.current.isPlaced && wasTap) {
         stateRef.current.currentPos.copy(stateRef.current.targetPos);
         stateRef.current.modelYaw = Math.atan2(
-          -stateRef.current.currentPos.x,
-          -stateRef.current.currentPos.z
+          camera.position.x - stateRef.current.currentPos.x,
+          camera.position.z - stateRef.current.currentPos.z
         );
         stateRef.current.isPlaced = true;
         if (modelGroupRef.current) {
@@ -428,8 +477,23 @@ export function MRTestViewer() {
       -Math.PI / 2
     );
 
+    // Sample points in the lower half of the 80x60 frame (where floor/ground texture appears)
+    const patchCenters: Array<{ x: number; y: number }> = [
+      { x: 20, y: 30 }, { x: 40, y: 30 }, { x: 60, y: 30 },
+      { x: 16, y: 38 }, { x: 32, y: 38 }, { x: 48, y: 38 }, { x: 64, y: 38 },
+      { x: 20, y: 46 }, { x: 40, y: 46 }, { x: 60, y: 46 },
+      { x: 26, y: 52 }, { x: 54, y: 52 },
+    ];
+
+    const medianOf = (arr: number[]): number => {
+      if (arr.length === 0) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const mid = sorted.length >> 1;
+      return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) * 0.5;
+    };
+
     renderer.setAnimationLoop(() => {
-      const delta = clock.getDelta();
+      const delta = Math.min(clock.getDelta(), 0.1);
       if (mixerRef.current) {
         mixerRef.current.update(delta);
       }
@@ -461,7 +525,140 @@ export function MRTestViewer() {
           .multiply(screenQuaternion);
       }
 
-      // 2. While scanning (!isPlaced), project the screen center onto the floor for the circle pointer
+      // 2. 6DoF Ground Translation Tracking (Rotation-Compensated Optical Flow + IMU Motion Gate)
+      const video = videoRef.current;
+      if (
+        flowCtx &&
+        video &&
+        video.readyState >= 2 &&
+        !video.paused &&
+        state.hasPrevQuat
+      ) {
+        flowCtx.drawImage(video, 0, 0, FLOW_W, FLOW_H);
+        const imgData = flowCtx.getImageData(0, 0, FLOW_W, FLOW_H).data;
+        for (let i = 0, p = 0; i < imgData.length; i += 4, p++) {
+          currGray[p] = (imgData[i] * 77 + imgData[i + 1] * 150 + imgData[i + 2] * 29) >> 8;
+        }
+
+        if (prevGray) {
+          // Compute camera angular change in camera-local frame between last frame and current frame
+          const deltaQuat = state.prevCamQuat.clone().invert().multiply(camera.quaternion);
+          const rotEuler = new THREE.Euler().setFromQuaternion(deltaQuat, 'YXZ');
+
+          // Focal lengths in 80x60 pixel units (vertical FOV = 65 deg)
+          const fy = (FLOW_H * 0.5) / Math.tan(THREE.MathUtils.degToRad(65 * 0.5));
+          const fx = (FLOW_W * 0.5) / (Math.tan(THREE.MathUtils.degToRad(65 * 0.5)) * camera.aspect);
+
+          // Expected pixel shift caused purely by phone rotation
+          const rotShiftX = rotEuler.y * fx;
+          const rotShiftY = rotEuler.x * fy;
+          const baseSearchX = Math.round(THREE.MathUtils.clamp(rotShiftX, -7, 7));
+          const baseSearchY = Math.round(THREE.MathUtils.clamp(rotShiftY, -7, 7));
+
+          const residualDxList: number[] = [];
+          const residualDyList: number[] = [];
+
+          // Block-matching optical flow around rotation-predicted offset
+          for (let k = 0; k < patchCenters.length; k++) {
+            const cx = patchCenters[k].x;
+            const cy = patchCenters[k].y;
+
+            // Check block texture contrast so flat regions don't add noise
+            let minL = 255;
+            let maxL = 0;
+            for (let py = -2; py <= 2; py++) {
+              const row = (cy + py) * FLOW_W + cx;
+              for (let px = -2; px <= 2; px++) {
+                const v = prevGray[row + px];
+                if (v < minL) minL = v;
+                if (v > maxL) maxL = v;
+              }
+            }
+            if (maxL - minL < 14) continue;
+
+            let bestSad = 1e9;
+            let bestDx = baseSearchX;
+            let bestDy = baseSearchY;
+
+            for (let dy = baseSearchY - 4; dy <= baseSearchY + 4; dy++) {
+              const ny = cy + dy;
+              if (ny < 3 || ny >= FLOW_H - 3) continue;
+              for (let dx = baseSearchX - 4; dx <= baseSearchX + 4; dx++) {
+                const nx = cx + dx;
+                if (nx < 3 || nx >= FLOW_W - 3) continue;
+
+                let sad = 0;
+                for (let py = -2; py <= 2; py++) {
+                  const r1 = (cy + py) * FLOW_W + cx;
+                  const r2 = (ny + py) * FLOW_W + nx;
+                  for (let px = -2; px <= 2; px++) {
+                    sad += Math.abs(prevGray[r1 + px] - currGray[r2 + px]);
+                  }
+                }
+                if (sad < bestSad) {
+                  bestSad = sad;
+                  bestDx = dx;
+                  bestDy = dy;
+                }
+              }
+            }
+
+            if (bestSad < 25 * 28) {
+              residualDxList.push(bestDx - rotShiftX);
+              residualDyList.push(bestDy - rotShiftY);
+            }
+          }
+
+          if (residualDxList.length >= 3) {
+            const transPxX = medianOf(residualDxList);
+            const transPxY = medianOf(residualDyList);
+
+            // Gate translation: requires either physical walking energy on IMU OR strong coherent visual flow
+            const imuRecent = performance.now() - state.lastImuTimestamp < 500;
+            const isMovingPhysically = !imuRecent || state.imuMotionEnergy > 0.12 || Math.hypot(transPxX, transPxY) > 0.85;
+
+            if (isMovingPhysically && Math.hypot(transPxX, transPxY) > 0.22) {
+              // Convert camera forward/right vectors onto the horizontal floor plane
+              const camForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+              const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+
+              const horizForward = new THREE.Vector3(camForward.x, 0, camForward.z);
+              if (horizForward.lengthSq() > 0.0001) horizForward.normalize();
+              const horizRight = new THREE.Vector3(camRight.x, 0, camRight.z);
+              if (horizRight.lengthSq() > 0.0001) horizRight.normalize();
+
+              // Estimate ground distance seen by lower-middle of camera to scale pixels -> meters
+              const sinPitch = Math.max(0.25, Math.min(0.95, -camForward.y));
+              const groundDist = Math.abs(FLOOR_Y) / sinPitch;
+              const metersPerPxY = (groundDist / fy) * 1.15;
+              const metersPerPxX = (groundDist / fx) * 1.05;
+
+              // Walking forward pushes floor pixels downward (+transPxY -> +horizForward)
+              // Walking right pushes floor pixels left (-transPxX -> +horizRight)
+              const stepForward = THREE.MathUtils.clamp(transPxY * metersPerPxY, -0.14, 0.14);
+              const stepRight = THREE.MathUtils.clamp(-transPxX * metersPerPxX, -0.14, 0.14);
+
+              state.camVel
+                .addScaledVector(horizForward, stepForward * 0.55)
+                .addScaledVector(horizRight, stepRight * 0.55);
+            }
+          }
+        } else {
+          prevGray = new Uint8Array(FLOW_W * FLOW_H);
+        }
+
+        prevGray.set(currGray);
+      }
+
+      // Apply smoothed camera translation velocity with quick friction so it stops immediately when you stop walking
+      state.camPos.add(state.camVel);
+      state.camVel.multiplyScalar(0.52);
+      camera.position.set(state.camPos.x, 0, state.camPos.z);
+
+      state.prevCamQuat.copy(camera.quaternion);
+      state.hasPrevQuat = true;
+
+      // 3. While scanning (!isPlaced), project the screen center onto the floor for the circle pointer
       if (!state.isPlaced) {
         const rect = container.getBoundingClientRect();
         projectScreenPointToFloor(
@@ -471,7 +668,7 @@ export function MRTestViewer() {
         );
       }
 
-      // 3. Smoothly interpolate floor position
+      // 4. Smoothly interpolate floor position
       state.currentPos.lerp(state.targetPos, 0.25);
 
       if (modelGroupRef.current) {
@@ -498,6 +695,7 @@ export function MRTestViewer() {
       renderer.setAnimationLoop(null);
       resizeObserver.disconnect();
       window.removeEventListener('deviceorientation', onDeviceOrientation, true);
+      window.removeEventListener('devicemotion', onDeviceMotion, true);
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
