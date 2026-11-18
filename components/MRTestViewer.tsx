@@ -1,5 +1,10 @@
 'use client';
 
+/*
+ * This product includes the XR Engine software developed by Niantic Spatial, Inc.
+ * Copyright © Niantic Spatial, Inc. All rights reserved.
+ */
+
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -7,52 +12,173 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BASE_PATH } from '../lib/assetTypes';
 
 const CABINET_GLB_URL = `${BASE_PATH}/3Dassets/${encodeURIComponent('Metering Cabinet-3Di.glb')}`;
-const FLOOR_Y = -1.15;
+
+type XR8HitTestType = 'FEATURE_POINT' | 'ESTIMATED_SURFACE' | 'DETECTED_SURFACE' | 'UNSPECIFIED';
+
+type XR8HitTestResult = {
+  type: XR8HitTestType;
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number; w: number };
+  distance: number;
+};
+
+type XR8ThreeScene = {
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  renderer: THREE.WebGLRenderer;
+  cameraTexture: THREE.Texture;
+};
+
+type XR8PipelineModule = {
+  name: string;
+  onStart?: (args: { canvas: HTMLCanvasElement; canvasWidth: number; canvasHeight: number }) => void;
+  onAttach?: (args: { canvas: HTMLCanvasElement; orientation?: number }) => void;
+  onDetach?: () => void;
+  onCanvasSizeChange?: (args: { canvas: HTMLCanvasElement; canvasWidth: number; canvasHeight: number }) => void;
+  onDeviceOrientationChange?: (args: { orientation: number }) => void;
+  onUpdate?: (args: { processCpuResult?: { reality?: { trackingStatus?: string; trackingReason?: string } } }) => void;
+  onCameraStatusChange?: (args: { status: string; reason?: string }) => void;
+  onException?: (error: unknown) => void;
+};
+
+type XR8Global = {
+  loadChunk: (chunk: string) => Promise<void>;
+  addCameraPipelineModules: (modules: XR8PipelineModule[]) => void;
+  clearCameraPipelineModules: () => void;
+  run: (config: {
+    canvas: HTMLCanvasElement;
+    allowedDevices?: string;
+    cameraConfig?: { direction?: string };
+    webgl2?: boolean;
+  }) => void;
+  stop: () => void;
+  XrConfig: {
+    device: () => { ANY: string; MOBILE: string; MOBILE_AND_HEADSETS: string };
+    camera: () => { BACK: string; FRONT: string; ANY: string };
+  };
+  GlTextureRenderer: {
+    pipelineModule: () => XR8PipelineModule;
+  };
+  Threejs: {
+    pipelineModule: () => XR8PipelineModule;
+    xrScene: () => XR8ThreeScene;
+  };
+  XrController: {
+    pipelineModule: () => XR8PipelineModule;
+    configure: (opts: {
+      scale?: 'responsive' | 'absolute';
+      disableWorldTracking?: boolean;
+      enableLighting?: boolean;
+    }) => void;
+    updateCameraProjectionMatrix: (opts: {
+      origin?: { x: number; y: number; z: number };
+      facing?: { x: number; y: number; z: number; w: number };
+    }) => void;
+    hitTest: (x: number, y: number, includedTypes?: XR8HitTestType[]) => XR8HitTestResult[];
+    recenter: () => void;
+  };
+};
+
+type XR8Window = Window & {
+  THREE?: typeof THREE;
+  XR8?: XR8Global;
+};
+
+/** Loads the self-hosted 8th Wall SLAM engine (public/xr/xr.js + xr-slam.js) once. */
+function loadXR8Engine(): Promise<XR8Global> {
+  const win = window as XR8Window;
+  // 8th Wall's Threejs pipeline module requires window.THREE to be assigned before initialization.
+  win.THREE = THREE;
+
+  if (win.XR8) {
+    const existing = win.XR8;
+    if (existing.XrController) return Promise.resolve(existing);
+    return existing.loadChunk('slam').then(() => existing);
+  }
+
+  return new Promise<XR8Global>((resolve, reject) => {
+    let settled = false;
+
+    const finish = async () => {
+      if (settled || !win.XR8) return;
+      settled = true;
+      window.removeEventListener('xrloaded', onXrLoaded);
+      window.clearInterval(pollId);
+      window.clearTimeout(timeoutId);
+      try {
+        if (!win.XR8.XrController) {
+          await win.XR8.loadChunk('slam');
+        }
+        resolve(win.XR8);
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    const onXrLoaded = () => {
+      void finish();
+    };
+
+    window.addEventListener('xrloaded', onXrLoaded);
+
+    const pollId = window.setInterval(() => {
+      if (win.XR8) void finish();
+    }, 100);
+
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('xrloaded', onXrLoaded);
+      window.clearInterval(pollId);
+      reject(new Error('Timed out loading 8th Wall SLAM engine.'));
+    }, 20000);
+
+    let script = document.querySelector<HTMLScriptElement>('script[data-xr8-engine="true"]');
+    if (!script) {
+      script = document.createElement('script');
+      script.src = `${BASE_PATH}/xr/xr.js`;
+      script.async = true;
+      script.setAttribute('data-preload-chunks', 'slam');
+      script.setAttribute('data-xr8-engine', 'true');
+      script.onerror = () => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('xrloaded', onXrLoaded);
+        window.clearInterval(pollId);
+        window.clearTimeout(timeoutId);
+        reject(new Error('Failed to load AR SLAM script.'));
+      };
+      document.head.appendChild(script);
+    }
+  });
+}
 
 export function MRTestViewer() {
   const [isPlaced, setIsPlaced] = useState(false);
+  const [engineReady, setEngineReady] = useState(false);
   const [modelLoading, setModelLoading] = useState(true);
   const [hasAnimations, setHasAnimations] = useState(false);
   const [animPlaying, setAnimPlaying] = useState(false);
-  const [needsMotionTap, setNeedsMotionTap] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Three.js scene refs
-  const modelGroupRef = useRef<THREE.Group | null>(null);
-  const reticleGroupRef = useRef<THREE.Group | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionsRef = useRef<THREE.AnimationAction[]>([]);
 
-  // Mutable interaction & spatial state accessed inside requestAnimationFrame
+  // Mutable AR interaction state read inside 8th Wall's onUpdate loop
   const stateRef = useRef({
     isPlaced: false,
-    gyroReceived: false,
-    alpha: null as number | null,
-    beta: null as number | null,
-    gamma: null as number | null,
-    // Smoothed camera rotation & deterministic world position (zero-drift!)
-    targetCamQuat: new THREE.Quaternion(),
-    hasInitialQuat: false,
-    // Body anchor position on floor (moves only on confirmed physical steps/walking)
-    bodyPos: new THREE.Vector3(0, 0, 0),
-    targetBodyPos: new THREE.Vector3(0, 0, 0),
-    // IMU linear velocity integrator with strict Zero-Velocity Update (ZUPT) lock
-    imuVelWorld: new THREE.Vector3(0, 0, 0),
-    stillFrames: 0,
-    lastStepTime: 0,
-    // Placed model transform (strictly locked in world coordinates once placed)
-    targetPos: new THREE.Vector3(0, FLOOR_Y, -2.2),
-    currentPos: new THREE.Vector3(0, FLOOR_Y, -2.2),
+    baseSurfaceY: 0,
     heightOffset: 0,
     targetHeightOffset: 0,
+    targetPos: new THREE.Vector3(0, 0, -2.0),
+    currentPos: new THREE.Vector3(0, 0, -2.0),
     modelYaw: 0,
     modelScale: 1,
+    hasValidHit: false,
     // Touch gesture states
     isDragging: false,
     multiTouchLock: false,
@@ -69,94 +195,18 @@ export function MRTestViewer() {
     threeFingerStartHeight: 0,
   });
 
-  useEffect(() => {
-    stateRef.current.isPlaced = isPlaced;
-  }, [isPlaced]);
-
-  const stopCameraStream = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
+  const stopXR8 = useCallback(() => {
+    const win = window as XR8Window;
+    if (win.XR8) {
+      try {
+        win.XR8.stop();
+        win.XR8.clearCameraPipelineModules();
+      } catch {
+        // Ignore cleanup errors if XR8 had not fully started
+      }
     }
   }, []);
 
-  // Auto-start rear camera on mount
-  useEffect(() => {
-    let cancelled = false;
-
-    const initCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        });
-        if (cancelled) {
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-      } catch (err) {
-        console.warn('Rear camera access error:', err);
-      }
-    };
-
-    initCamera();
-
-    // Check if iOS requires a tap for DeviceOrientation / DeviceMotion permission
-    const timer = window.setTimeout(() => {
-      if (cancelled || stateRef.current.gyroReceived) return;
-      const DeviceOrientation = (
-        window as unknown as {
-          DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
-        }
-      ).DeviceOrientationEvent;
-      if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
-        setNeedsMotionTap(true);
-      }
-    }, 450);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      stopCameraStream();
-    };
-  }, [stopCameraStream]);
-
-  // Request iOS permissions sequentially (iOS drops the second request if called concurrently!)
-  const requestMotionOnTap = async () => {
-    const win = window as unknown as {
-      DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
-      DeviceMotionEvent?: { requestPermission?: () => Promise<string> };
-    };
-    if (win.DeviceOrientationEvent && typeof win.DeviceOrientationEvent.requestPermission === 'function') {
-      try {
-        await win.DeviceOrientationEvent.requestPermission();
-      } catch {
-        // Ignore if denied
-      }
-    }
-    if (win.DeviceMotionEvent && typeof win.DeviceMotionEvent.requestPermission === 'function') {
-      try {
-        await win.DeviceMotionEvent.requestPermission();
-      } catch {
-        // Ignore if denied
-      }
-    }
-    setNeedsMotionTap(false);
-  };
-
-  // Toggle Play / Pause animation
   const toggleAnimation = () => {
     if (actionsRef.current.length === 0) return;
     const nextState = !animPlaying;
@@ -169,214 +219,102 @@ export function MRTestViewer() {
     setAnimPlaying(nextState);
   };
 
-  // Three.js Scene + Matched iPhone Camera Lens FOV + Drift-Free World Lock
   useEffect(() => {
-    const canvas = canvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
 
-    const width = container.clientWidth || window.innerWidth;
-    const height = container.clientHeight || window.innerHeight;
+    let disposed = false;
+    let resizeHandler: (() => void) | null = null;
+    let sceneCamera: THREE.PerspectiveCamera | null = null;
+    let xr8Instance: XR8Global | null = null;
 
-    const scene = new THREE.Scene();
+    // Reset state for clean mount / retry
+    const st = stateRef.current;
+    st.isPlaced = false;
+    st.baseSurfaceY = 0;
+    st.heightOffset = 0;
+    st.targetHeightOffset = 0;
+    st.targetPos.set(0, 0, -2.0);
+    st.currentPos.set(0, 0, -2.0);
+    st.modelYaw = 0;
+    st.modelScale = 1;
+    st.hasValidHit = false;
+    st.isDragging = false;
+    st.multiTouchLock = false;
+    st.twoFingerActive = false;
+    st.threeFingerActive = false;
+    mixerRef.current = null;
+    actionsRef.current = [];
 
-    // 57.5° matches the vertical FOV of the iPhone 15 / 15 Pro 24mm 1x rear camera in 16:9 Portrait object-cover
-    const camera = new THREE.PerspectiveCamera(57.5, width / height, 0.05, 100);
-    camera.position.set(0, 0, 0);
-    cameraRef.current = camera;
-
-    const renderer = new THREE.WebGLRenderer({
-      canvas,
-      alpha: true,
-      antialias: true,
-      powerPreference: 'high-performance',
+    queueMicrotask(() => {
+      setIsPlaced(false);
+      setEngineReady(false);
+      setModelLoading(true);
+      setHasAnimations(false);
+      setAnimPlaying(false);
+      setErrorMessage(null);
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(width, height);
-    renderer.setClearColor(0x000000, 0);
-    rendererRef.current = renderer;
 
-    // Studio lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 1.55));
-    const dirLight1 = new THREE.DirectionalLight(0xffffff, 2.1);
-    dirLight1.position.set(4, 8, 5);
-    scene.add(dirLight1);
-    const dirLight2 = new THREE.DirectionalLight(0x90b4ff, 0.9);
-    dirLight2.position.set(-4, 2, -3);
-    scene.add(dirLight2);
-
-    // Microsoft Power Apps MR orange floor circle pointer
-    const reticleGroup = new THREE.Group();
-    const outerRingGeo = new THREE.RingGeometry(0.38, 0.43, 64);
-    outerRingGeo.rotateX(-Math.PI / 2);
-    const outerRingMat = new THREE.MeshBasicMaterial({
-      color: 0xf59e0b,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.9,
-    });
-    reticleGroup.add(new THREE.Mesh(outerRingGeo, outerRingMat));
-
-    const innerRingGeo = new THREE.RingGeometry(0.18, 0.2, 48);
-    innerRingGeo.rotateX(-Math.PI / 2);
-    const innerRingMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.75,
-    });
-    reticleGroup.add(new THREE.Mesh(innerRingGeo, innerRingMat));
-
-    const dotGeo = new THREE.CircleGeometry(0.05, 32);
-    dotGeo.rotateX(-Math.PI / 2);
-    const dotMat = new THREE.MeshBasicMaterial({
-      color: 0xf59e0b,
-      side: THREE.DoubleSide,
-    });
-    reticleGroup.add(new THREE.Mesh(dotGeo, dotMat));
-
-    reticleGroup.position.copy(stateRef.current.currentPos);
-    scene.add(reticleGroup);
-    reticleGroupRef.current = reticleGroup;
-
-    // Model Group (hidden until user taps screen to place on the circle pointer)
-    const modelGroup = new THREE.Group();
-    modelGroup.position.copy(stateRef.current.currentPos);
-    modelGroup.visible = false;
-    scene.add(modelGroup);
-    modelGroupRef.current = modelGroup;
-
-    // Load Metering Cabinet GLB paused at frame 0
-    const loader = new GLTFLoader();
-    loader.load(
-      CABINET_GLB_URL,
-      gltf => {
-        const root = gltf.scene;
-        const box = new THREE.Box3().setFromObject(root);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z) || 1;
-        const normScale = 1.15 / maxDim;
-
-        // Bottom-align model to stand directly on the floor circle pointer
-        root.position.set(-center.x * normScale, -box.min.y * normScale, -center.z * normScale);
-        root.scale.setScalar(normScale);
-        modelGroup.add(root);
-
-        if (gltf.animations && gltf.animations.length > 0) {
-          const mixer = new THREE.AnimationMixer(root);
-          mixerRef.current = mixer;
-          actionsRef.current = gltf.animations.map(clip => {
-            const action = mixer.clipAction(clip);
-            action.reset();
-            action.play();
-            action.paused = true;
-            return action;
-          });
-          // Evaluate first frame (t = 0) while paused
-          mixer.update(0);
-          setHasAnimations(true);
-          setAnimPlaying(false);
-        }
-
-        setModelLoading(false);
-      },
-      undefined,
-      err => {
-        console.error('Error loading Metering Cabinet GLB:', err);
-        setModelLoading(false);
-      }
-    );
-
-    // Gyroscope orientation listener
-    const onDeviceOrientation = (e: DeviceOrientationEvent) => {
-      if (e.alpha === null || e.beta === null || e.gamma === null) return;
-      stateRef.current.gyroReceived = true;
-      stateRef.current.alpha = e.alpha;
-      stateRef.current.beta = e.beta;
-      stateRef.current.gamma = e.gamma;
-    };
-    window.addEventListener('deviceorientation', onDeviceOrientation, true);
-
-    // CoreMotion linear acceleration + step pedometer (with strict Zero-Velocity Update lock when still)
-    const onDeviceMotion = (e: DeviceMotionEvent) => {
-      const acc = e.acceleration;
-      if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
-      const dt = e.interval ? Math.min(0.05, e.interval) : 1 / 60;
-      const st = stateRef.current;
-
-      // Ignore tiny sensor noise (< 0.25 m/s^2) so standing/rotating in place produces ZERO drift
-      const mag = Math.hypot(acc.x, acc.y, acc.z);
-      if (mag < 0.28) {
-        st.stillFrames += 1;
-        if (st.stillFrames > 4) {
-          st.imuVelWorld.set(0, 0, 0);
-        } else {
-          st.imuVelWorld.multiplyScalar(0.6);
-        }
-        return;
-      }
-
-      st.stillFrames = 0;
-
-      // Transform phone-local linear acceleration into world space using current camera orientation
-      const localAcc = new THREE.Vector3(acc.x, acc.y, acc.z).applyQuaternion(camera.quaternion);
-      localAcc.y = 0; // Constrain walking translation to the horizontal floor plane
-
-      st.imuVelWorld.addScaledVector(localAcc, dt * 0.55);
-      // Clamp maximum walking speed to 1.2 m/s and apply strong damping
-      if (st.imuVelWorld.length() > 1.2) {
-        st.imuVelWorld.setLength(1.2);
-      }
-      st.imuVelWorld.multiplyScalar(0.88);
-      st.targetBodyPos.addScaledVector(st.imuVelWorld, dt);
-
-      // Step-cadence impulse: when a clear walking step peak occurs (> 1.15 m/s^2), advance slightly along gaze
-      const now = performance.now();
-      if (mag > 1.15 && now - st.lastStepTime > 360) {
-        st.lastStepTime = now;
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-        forward.y = 0;
-        if (forward.lengthSq() > 0.001) {
-          forward.normalize();
-          // Determine if step impulse is forward or backward relative to screen (-Z in camera space)
-          const forwardSign = acc.z < -0.25 ? -1 : 1;
-          st.targetBodyPos.addScaledVector(forward, forwardSign * 0.24);
-        }
-      }
-    };
-    window.addEventListener('devicemotion', onDeviceMotion, true);
-
-    // Raycast helper onto horizontal plane at current object height (FLOOR_Y + heightOffset)
+    // Raycast + 8th Wall SLAM Hit-Test helper
     const raycaster = new THREE.Raycaster();
-    const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -FLOOR_Y);
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const hitVec = new THREE.Vector3();
 
-    const projectScreenPointToFloor = (clientX: number, clientY: number, out: THREE.Vector3): boolean => {
-      const planeY = FLOOR_Y + stateRef.current.heightOffset;
-      floorPlane.constant = -planeY;
-
+    const findWorldPoint = (
+      clientX: number,
+      clientY: number,
+      useSlamHitTest: boolean,
+      out: THREE.Vector3
+    ): boolean => {
       const rect = container.getBoundingClientRect();
-      const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
-      const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+      if (rect.width <= 0 || rect.height <= 0) return false;
 
-      const camX = camera.position.x;
-      const camZ = camera.position.z;
+      const normX = THREE.MathUtils.clamp((clientX - rect.left) / rect.width, 0, 1);
+      const normY = THREE.MathUtils.clamp((clientY - rect.top) / rect.height, 0, 1);
+
+      // 1. Prefer real 8th Wall SLAM surface hit-test while scanning for placement
+      if (useSlamHitTest && xr8Instance?.XrController) {
+        try {
+          const hits = xr8Instance.XrController.hitTest(normX, normY, [
+            'DETECTED_SURFACE',
+            'ESTIMATED_SURFACE',
+          ]);
+          if (hits && hits.length > 0) {
+            const best = hits[0];
+            out.set(best.position.x, best.position.y, best.position.z);
+            return true;
+          }
+        } catch {
+          // Fall back to camera raycast onto the SLAM ground plane
+        }
+      }
+
+      // 2. Raycast SLAM-tracked camera onto active horizontal surface plane
+      if (!sceneCamera) return false;
+      const planeY = stateRef.current.baseSurfaceY + stateRef.current.heightOffset;
+      groundPlane.constant = -planeY;
+
+      const ndcX = normX * 2 - 1;
+      const ndcY = -normY * 2 + 1;
+      raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), sceneCamera);
+
+      const camX = sceneCamera.position.x;
+      const camZ = sceneCamera.position.z;
       const dir = raycaster.ray.direction;
 
-      if (dir.y < -0.05) {
-        const hit = raycaster.ray.intersectPlane(floorPlane, hitVec);
+      if (dir.y < -0.04) {
+        const hit = raycaster.ray.intersectPlane(groundPlane, hitVec);
         if (hit) {
           let relX = hit.x - camX;
           let relZ = hit.z - camZ;
           const dist = Math.hypot(relX, relZ);
-          if (dist > 7.5) {
-            const s = 7.5 / dist;
+          if (dist > 9.0) {
+            const s = 9.0 / dist;
             relX *= s;
             relZ *= s;
-          } else if (dist < 0.65) {
-            const s = 0.65 / Math.max(dist, 0.001);
+          } else if (dist < 0.5) {
+            const s = 0.5 / Math.max(dist, 0.001);
             relX *= s;
             relZ *= s;
           }
@@ -385,11 +323,12 @@ export function MRTestViewer() {
         }
       }
 
+      // Fallback when camera is tilted above horizon
       const currentDist = Math.hypot(
         stateRef.current.currentPos.x - camX,
         stateRef.current.currentPos.z - camZ
       );
-      const d = THREE.MathUtils.clamp(currentDist || 2.2, 1.1, 4.5);
+      const d = THREE.MathUtils.clamp(currentDist || 2.0, 1.0, 4.5);
       const horiz = new THREE.Vector3(dir.x, 0, dir.z);
       if (horiz.lengthSq() > 0.0001) {
         horiz.normalize();
@@ -399,7 +338,7 @@ export function MRTestViewer() {
       return false;
     };
 
-    // 1-finger touch: tap to place when scanning; slide on floor once placed
+    // 1-finger touch: tap anywhere to place when scanning; drag to slide on floor once placed
     const onPointerDown = (e: PointerEvent) => {
       if (
         !e.isPrimary ||
@@ -435,8 +374,8 @@ export function MRTestViewer() {
       }
 
       if (stateRef.current.isPlaced) {
-        // 1-finger drag slides the placed model along the floor plane
-        projectScreenPointToFloor(e.clientX, e.clientY, stateRef.current.targetPos);
+        // 1-finger drag slides the model smoothly across its anchored horizontal floor plane
+        findWorldPoint(e.clientX, e.clientY, false, stateRef.current.targetPos);
       }
     };
 
@@ -449,22 +388,22 @@ export function MRTestViewer() {
         !stateRef.current.threeFingerActive;
       stateRef.current.isDragging = false;
 
-      // Tap anywhere on screen while scanning places and locks the model at the circle pointer
-      if (!stateRef.current.isPlaced && wasTap) {
+      if (!stateRef.current.isPlaced && wasTap && sceneCamera) {
+        // Drop and lock the cabinet at the orange circle pointer's SLAM world coordinate
         stateRef.current.currentPos.copy(stateRef.current.targetPos);
+        stateRef.current.baseSurfaceY = stateRef.current.currentPos.y;
+        stateRef.current.heightOffset = 0;
+        stateRef.current.targetHeightOffset = 0;
         stateRef.current.modelYaw = Math.atan2(
-          camera.position.x - stateRef.current.currentPos.x,
-          camera.position.z - stateRef.current.currentPos.z
+          sceneCamera.position.x - stateRef.current.currentPos.x,
+          sceneCamera.position.z - stateRef.current.currentPos.z
         );
         stateRef.current.isPlaced = true;
-        if (modelGroupRef.current) {
-          modelGroupRef.current.visible = true;
-        }
         setIsPlaced(true);
       }
     };
 
-    // Multi-touch handlers: 2-finger pinch (scale) + twist (Y rotation), 3-finger swipe up/down (height)
+    // Multi-touch: 2-finger pinch (scale) + twist (Y-axis rotation), 3-finger swipe up/down (height)
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
         stateRef.current.multiTouchLock = true;
@@ -496,7 +435,6 @@ export function MRTestViewer() {
         e.preventDefault();
         const avgY =
           (e.touches[0].clientY + e.touches[1].clientY + e.touches[2].clientY) / 3;
-        // Swiping up (smaller clientY) raises the height; swiping down lowers it
         const deltaY = stateRef.current.threeFingerStartY - avgY;
         stateRef.current.targetHeightOffset = THREE.MathUtils.clamp(
           stateRef.current.threeFingerStartHeight + deltaY * 0.0045,
@@ -518,8 +456,8 @@ export function MRTestViewer() {
         const factor = dist / stateRef.current.pinchStartDist;
         stateRef.current.modelScale = THREE.MathUtils.clamp(
           stateRef.current.pinchStartScale * factor,
-          0.25,
-          3.5
+          0.2,
+          4.0
         );
 
         const angle = Math.atan2(dy, dx);
@@ -529,15 +467,9 @@ export function MRTestViewer() {
     };
 
     const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length < 3) {
-        stateRef.current.threeFingerActive = false;
-      }
-      if (e.touches.length < 2) {
-        stateRef.current.twoFingerActive = false;
-      }
-      if (e.touches.length === 0) {
-        stateRef.current.multiTouchLock = false;
-      }
+      if (e.touches.length < 3) stateRef.current.threeFingerActive = false;
+      if (e.touches.length < 2) stateRef.current.twoFingerActive = false;
+      if (e.touches.length === 0) stateRef.current.multiTouchLock = false;
     };
 
     container.addEventListener('pointerdown', onPointerDown);
@@ -548,135 +480,334 @@ export function MRTestViewer() {
     container.addEventListener('touchend', onTouchEnd, { passive: true });
     container.addEventListener('touchcancel', onTouchEnd, { passive: true });
 
-    const updateCameraLensFov = () => {
-      if (!container) return;
-      const w = container.clientWidth || window.innerWidth;
-      const h = container.clientHeight || window.innerHeight;
-      const screenAspect = w / h;
+    // Initialize 8th Wall SLAM Engine + Three.js Pipeline
+    loadXR8Engine()
+      .then(XR8 => {
+        if (disposed) return;
+        xr8Instance = XR8;
 
-      // Match the exact vertical FOV of the iPhone 24mm 1x rear camera after CSS `object-cover` crop
-      const video = videoRef.current;
-      const vidW = video && video.videoWidth > 0 ? video.videoWidth : 1080;
-      const vidH = video && video.videoHeight > 0 ? video.videoHeight : 1920;
-      const videoAspect = vidW / vidH;
-
-      // Native vertical FOV of iPhone 1x camera in 16:9 portrait stream is ~58 degrees
-      const nativeVFovRad = THREE.MathUtils.degToRad(58);
-      const visibleHeightFraction =
-        screenAspect > videoAspect ? videoAspect / screenAspect : 1.0;
-      const effectiveVFovRad =
-        2 * Math.atan(Math.tan(nativeVFovRad * 0.5) * visibleHeightFraction);
-
-      camera.fov = THREE.MathUtils.radToDeg(effectiveVFovRad);
-      camera.aspect = screenAspect;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    };
-
-    const resizeObserver = new ResizeObserver(updateCameraLensFov);
-    resizeObserver.observe(container);
-    const vidEl = videoRef.current;
-    vidEl?.addEventListener('loadedmetadata', updateCameraLensFov);
-
-    const clock = new THREE.Clock();
-    const worldAlignment = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(1, 0, 0),
-      -Math.PI / 2
-    );
-
-    renderer.setAnimationLoop(() => {
-      const delta = Math.min(clock.getDelta(), 0.1);
-      if (mixerRef.current) {
-        mixerRef.current.update(delta);
-      }
-
-      const state = stateRef.current;
-
-      // 1. Update camera orientation from phone gyroscope (exact 360° quaternion pipeline)
-      if (state.alpha !== null && state.beta !== null && state.gamma !== null) {
-        const alphaRad = THREE.MathUtils.degToRad(state.alpha);
-        const betaRad = THREE.MathUtils.degToRad(state.beta);
-        const gammaRad = THREE.MathUtils.degToRad(state.gamma);
-
-        const deviceEuler = new THREE.Euler(betaRad, alphaRad, -gammaRad, 'YXZ');
-        const deviceQuaternion = new THREE.Quaternion().setFromEuler(deviceEuler);
-
-        const win = window as Window & { orientation?: number };
-        const screenAngle =
-          typeof win.orientation === 'number'
-            ? win.orientation
-            : win.screen?.orientation?.angle || 0;
-        const screenQuaternion = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 0, 1),
-          -THREE.MathUtils.degToRad(screenAngle)
-        );
-
-        state.targetCamQuat
-          .copy(deviceQuaternion)
-          .multiply(worldAlignment)
-          .multiply(screenQuaternion);
-
-        if (!state.hasInitialQuat) {
-          camera.quaternion.copy(state.targetCamQuat);
-          state.hasInitialQuat = true;
-        } else {
-          // Responsive slerp keeps rotation 1:1 with the camera feed while filtering sensor micro-jitter
-          const rotAlpha = 1 - Math.exp(-40 * delta);
-          camera.quaternion.slerp(state.targetCamQuat, rotAlpha);
+        // Clean any leftover pipeline state from previous visits
+        try {
+          XR8.stop();
+          XR8.clearCameraPipelineModules();
+        } catch {
+          // Ignore if not previously running
         }
-      }
 
-      // 2. Smoothly update body position (only moves during confirmed footsteps/walking, 100% locked when standing)
-      state.bodyPos.lerp(state.targetBodyPos, 1 - Math.exp(-10 * delta));
-      camera.position.set(state.bodyPos.x, 0, state.bodyPos.z);
+        // Size canvas to fill viewport cleanly at crisp Retina resolution without leaving React's DOM
+        const syncCanvasDimensions = () => {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const w = Math.max(1, Math.round(window.innerWidth * dpr));
+          const h = Math.max(1, Math.round(window.innerHeight * dpr));
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+          canvas.style.width = '100%';
+          canvas.style.height = '100%';
+        };
+        syncCanvasDimensions();
+        resizeHandler = syncCanvasDimensions;
+        window.addEventListener('resize', syncCanvasDimensions);
 
-      // 3. Smoothly interpolate height offset from 3-finger vertical swipe
-      state.heightOffset += (state.targetHeightOffset - state.heightOffset) * 0.25;
-      const activeFloorY = FLOOR_Y + state.heightOffset;
-      state.targetPos.y = activeFloorY;
+        const reactSafeCanvasModule: XR8PipelineModule = {
+          name: 'react-safe-fullwindow-canvas',
+          onAttach: () => syncCanvasDimensions(),
+          onCanvasSizeChange: ({ canvas: c }) => {
+            // XR8.Threejs calls renderer.setSize(w, h) which writes pixel inline styles; keep CSS 100%
+            c.style.width = '100%';
+            c.style.height = '100%';
+          },
+          onDeviceOrientationChange: () => {
+            window.requestAnimationFrame(syncCanvasDimensions);
+          },
+        };
 
-      // 4. While scanning (!isPlaced), project the screen center onto the floor for the circle pointer
-      if (!state.isPlaced) {
-        const rect = container.getBoundingClientRect();
-        projectScreenPointToFloor(
-          rect.left + rect.width / 2,
-          rect.top + rect.height * 0.56,
-          state.targetPos
+        let modelGroup: THREE.Group | null = null;
+        let reticleGroup: THREE.Group | null = null;
+        let shadowPlane: THREE.Mesh | null = null;
+        let dirLight: THREE.DirectionalLight | null = null;
+        const clock = new THREE.Clock();
+
+        const arSceneModule: XR8PipelineModule = {
+          name: 'cabinet-slam-scene',
+          onCameraStatusChange: ({ status }) => {
+            if (disposed) return;
+            if (status === 'hasVideo') {
+              setEngineReady(true);
+            } else if (status === 'failed') {
+              setErrorMessage('Camera or motion access was blocked. Tap Retry to allow permissions.');
+            }
+          },
+          onException: err => {
+            if (disposed) return;
+            console.error('8th Wall XR exception:', err);
+            setErrorMessage('Could not start AR SLAM tracking on this device.');
+          },
+          onStart: ({ canvas: c }) => {
+            if (disposed) return;
+            c.style.width = '100%';
+            c.style.height = '100%';
+
+            const { scene, camera, renderer } = XR8.Threejs.xrScene();
+            sceneCamera = camera;
+
+            // Modern Three.js r160 color management & soft ground shadows
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.1;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            // Place initial virtual camera at natural standing height (1.4m above y=0 ground plane)
+            camera.position.set(0, 1.4, 0);
+            XR8.XrController.updateCameraProjectionMatrix({
+              origin: camera.position,
+              facing: camera.quaternion,
+            });
+
+            // Studio + shadow lighting
+            scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 1.5));
+
+            dirLight = new THREE.DirectionalLight(0xffffff, 2.2);
+            dirLight.position.set(2.5, 6, 3.5);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 20;
+            dirLight.shadow.camera.left = -3;
+            dirLight.shadow.camera.right = 3;
+            dirLight.shadow.camera.top = 3;
+            dirLight.shadow.camera.bottom = -3;
+            dirLight.shadow.bias = -0.0005;
+            scene.add(dirLight);
+            scene.add(dirLight.target);
+
+            const fillLight = new THREE.DirectionalLight(0x90b4ff, 0.75);
+            fillLight.position.set(-3, 2, -3);
+            scene.add(fillLight);
+
+            // Soft shadow catcher plane directly beneath the cabinet
+            const shadowGeo = new THREE.PlaneGeometry(8, 8);
+            shadowGeo.rotateX(-Math.PI / 2);
+            const shadowMat = new THREE.ShadowMaterial({ opacity: 0.36 });
+            shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
+            shadowPlane.receiveShadow = true;
+            shadowPlane.visible = false;
+            scene.add(shadowPlane);
+
+            // Microsoft Power Apps MR orange placer circle
+            reticleGroup = new THREE.Group();
+            const outerRingGeo = new THREE.RingGeometry(0.32, 0.37, 64);
+            outerRingGeo.rotateX(-Math.PI / 2);
+            reticleGroup.add(
+              new THREE.Mesh(
+                outerRingGeo,
+                new THREE.MeshBasicMaterial({
+                  color: 0xf59e0b,
+                  side: THREE.DoubleSide,
+                  transparent: true,
+                  opacity: 0.92,
+                })
+              )
+            );
+            const innerRingGeo = new THREE.RingGeometry(0.15, 0.17, 48);
+            innerRingGeo.rotateX(-Math.PI / 2);
+            reticleGroup.add(
+              new THREE.Mesh(
+                innerRingGeo,
+                new THREE.MeshBasicMaterial({
+                  color: 0xffffff,
+                  side: THREE.DoubleSide,
+                  transparent: true,
+                  opacity: 0.78,
+                })
+              )
+            );
+            const dotGeo = new THREE.CircleGeometry(0.045, 32);
+            dotGeo.rotateX(-Math.PI / 2);
+            reticleGroup.add(
+              new THREE.Mesh(
+                dotGeo,
+                new THREE.MeshBasicMaterial({
+                  color: 0xf59e0b,
+                  side: THREE.DoubleSide,
+                })
+              )
+            );
+            reticleGroup.position.set(0, 0.005, -2.0);
+            scene.add(reticleGroup);
+
+            // Cabinet Model Group (hidden until user taps screen to drop onto the orange circle)
+            modelGroup = new THREE.Group();
+            modelGroup.visible = false;
+            scene.add(modelGroup);
+
+            // Load Metering Cabinet GLB paused on frame 0
+            const loader = new GLTFLoader();
+            loader.load(
+              CABINET_GLB_URL,
+              gltf => {
+                if (disposed || !modelGroup) return;
+                const root = gltf.scene;
+                const box = new THREE.Box3().setFromObject(root);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z) || 1;
+                const normScale = 1.15 / maxDim;
+
+                // Bottom-align model to rest cleanly on the ground plane
+                root.position.set(
+                  -center.x * normScale,
+                  -box.min.y * normScale,
+                  -center.z * normScale
+                );
+                root.scale.setScalar(normScale);
+
+                root.traverse(obj => {
+                  const mesh = obj as THREE.Mesh;
+                  if (mesh.isMesh) {
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                  }
+                });
+
+                modelGroup.add(root);
+
+                if (gltf.animations && gltf.animations.length > 0) {
+                  const mixer = new THREE.AnimationMixer(root);
+                  mixerRef.current = mixer;
+                  actionsRef.current = gltf.animations.map(clip => {
+                    const action = mixer.clipAction(clip);
+                    action.reset();
+                    action.play();
+                    action.paused = true;
+                    return action;
+                  });
+                  // Evaluate first frame (t = 0) while paused
+                  mixer.update(0);
+                  setHasAnimations(true);
+                  setAnimPlaying(false);
+                }
+
+                setModelLoading(false);
+              },
+              undefined,
+              err => {
+                console.error('Error loading Metering Cabinet GLB:', err);
+                if (!disposed) setModelLoading(false);
+              }
+            );
+
+            setEngineReady(true);
+          },
+          onUpdate: () => {
+            const delta = Math.min(clock.getDelta(), 0.1);
+            if (mixerRef.current) {
+              mixerRef.current.update(delta);
+            }
+
+            const state = stateRef.current;
+
+            // Smooth 3-finger height adjustment
+            state.heightOffset += (state.targetHeightOffset - state.heightOffset) * 0.25;
+            const activeY = state.baseSurfaceY + state.heightOffset;
+
+            if (!state.isPlaced) {
+              // Aim orange floor circle at screen center using real 8th Wall SLAM hit-test + ground plane fallback
+              const rect = container.getBoundingClientRect();
+              const hit = findWorldPoint(
+                rect.left + rect.width * 0.5,
+                rect.top + rect.height * 0.56,
+                true,
+                state.targetPos
+              );
+              if (hit) {
+                if (!state.hasValidHit) {
+                  state.currentPos.copy(state.targetPos);
+                  state.hasValidHit = true;
+                } else {
+                  state.currentPos.lerp(state.targetPos, 0.3);
+                }
+              }
+            } else {
+              // Once placed, world X/Z only change when user explicitly slides with 1 finger
+              if (state.isDragging) {
+                state.currentPos.x += (state.targetPos.x - state.currentPos.x) * 0.35;
+                state.currentPos.z += (state.targetPos.z - state.currentPos.z) * 0.35;
+              }
+              state.currentPos.y = activeY;
+            }
+
+            if (modelGroup) {
+              modelGroup.visible = state.isPlaced;
+              modelGroup.position.copy(state.currentPos);
+              modelGroup.scale.setScalar(state.modelScale);
+              modelGroup.rotation.set(0, state.modelYaw, 0);
+            }
+
+            if (shadowPlane && dirLight) {
+              shadowPlane.visible = state.isPlaced;
+              shadowPlane.position.set(
+                state.currentPos.x,
+                state.currentPos.y + 0.002,
+                state.currentPos.z
+              );
+              // Keep directional shadow frustum centered on the placed cabinet
+              dirLight.position.set(
+                state.currentPos.x + 2.5,
+                state.currentPos.y + 6.0,
+                state.currentPos.z + 3.5
+              );
+              dirLight.target.position.copy(state.currentPos);
+            }
+
+            if (reticleGroup) {
+              reticleGroup.position.set(
+                state.currentPos.x,
+                state.currentPos.y + 0.005,
+                state.currentPos.z
+              );
+              reticleGroup.visible =
+                !state.isPlaced || state.isDragging || state.threeFingerActive;
+            }
+          },
+        };
+
+        // Configure 8th Wall 6DoF World Tracking ('responsive' locks immediately on frame 1 regardless of IMU scale delay)
+        XR8.XrController.configure({
+          scale: 'responsive',
+          disableWorldTracking: false,
+        });
+
+        XR8.addCameraPipelineModules([
+          XR8.GlTextureRenderer.pipelineModule(),
+          XR8.Threejs.pipelineModule(),
+          XR8.XrController.pipelineModule(),
+          reactSafeCanvasModule,
+          arSceneModule,
+        ]);
+
+        XR8.run({
+          canvas,
+          allowedDevices: XR8.XrConfig.device().ANY,
+          cameraConfig: { direction: XR8.XrConfig.camera().BACK },
+        });
+      })
+      .catch(err => {
+        if (disposed) return;
+        console.error('Failed to initialize 8th Wall SLAM:', err);
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Failed to initialize AR SLAM engine.'
         );
-        state.currentPos.lerp(state.targetPos, 0.28);
-      } else if (state.isDragging) {
-        // When placed, ONLY move X/Z when the user explicitly drags with 1 finger
-        state.currentPos.lerp(state.targetPos, 0.35);
-      }
-      state.currentPos.y = activeFloorY;
-
-      if (modelGroupRef.current) {
-        modelGroupRef.current.visible = state.isPlaced;
-        modelGroupRef.current.position.copy(state.currentPos);
-        modelGroupRef.current.scale.setScalar(state.modelScale);
-        modelGroupRef.current.rotation.set(0, state.modelYaw, 0);
-      }
-
-      if (reticleGroupRef.current) {
-        reticleGroupRef.current.position.set(
-          state.currentPos.x,
-          activeFloorY + 0.005,
-          state.currentPos.z
-        );
-        // Show the orange circle pointer before placement, while sliding on floor, or while adjusting height with 3 fingers
-        reticleGroupRef.current.visible =
-          !state.isPlaced || state.isDragging || state.threeFingerActive;
-      }
-
-      renderer.render(scene, camera);
-    });
+      });
 
     return () => {
-      renderer.setAnimationLoop(null);
-      resizeObserver.disconnect();
-      vidEl?.removeEventListener('loadedmetadata', updateCameraLensFov);
-      window.removeEventListener('deviceorientation', onDeviceOrientation, true);
-      window.removeEventListener('devicemotion', onDeviceMotion, true);
+      disposed = true;
+      if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+      }
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
@@ -684,9 +815,9 @@ export function MRTestViewer() {
       container.removeEventListener('touchmove', onTouchMove);
       container.removeEventListener('touchend', onTouchEnd);
       container.removeEventListener('touchcancel', onTouchEnd);
-      renderer.dispose();
+      stopXR8();
     };
-  }, []);
+  }, [retryTick, stopXR8]);
 
   return (
     <div
@@ -694,17 +825,11 @@ export function MRTestViewer() {
       className="fixed inset-0 w-full h-dvh bg-black text-white font-sans overflow-hidden select-none"
       style={{ touchAction: 'none' }}
     >
-      {/* Full-Screen Rear Camera Feed */}
-      <video
-        ref={videoRef}
-        playsInline
-        muted
-        autoPlay
-        className="absolute inset-0 w-full h-full object-cover"
+      {/* Full-Screen 8th Wall SLAM + Three.js WebGL Canvas */}
+      <canvas
+        ref={canvasRef}
+        className="w-full! h-full! block"
       />
-
-      {/* Full-Screen Transparent Three.js GLB Canvas */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-10" />
 
       {/* Top-Left Back Button */}
       <header
@@ -713,7 +838,7 @@ export function MRTestViewer() {
       >
         <Link
           href="/ARs"
-          onClick={stopCameraStream}
+          onClick={stopXR8}
           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0 backdrop-blur-md shadow-lg"
         >
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -724,34 +849,43 @@ export function MRTestViewer() {
       </header>
 
       {/* Subtle Placement Prompt while Scanning */}
-      {!isPlaced && !modelLoading && !needsMotionTap && (
+      {engineReady && !isPlaced && !modelLoading && !errorMessage && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-4 py-2 rounded-full bg-black/55 backdrop-blur-md border border-amber-400/35 text-amber-200 text-xs font-medium text-center whitespace-nowrap shadow-lg">
           Aim circle at floor • Tap screen to place
         </div>
       )}
 
-      {/* One-time iOS Motion Permission Overlay (only if page was loaded directly without prior tap gesture) */}
-      {needsMotionTap && (
+      {/* Loading Indicator while 8th Wall SLAM & GLB initialize */}
+      {(!engineReady || modelLoading) && !errorMessage && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/55 backdrop-blur-xs pointer-events-none">
+          <div className="w-10 h-10 rounded-full border-4 border-white/15 border-t-amber-400 animate-spin mb-3" />
+          <p className="text-xs font-medium text-white/80">
+            {!engineReady ? 'Starting AR World Tracking...' : 'Loading 3D Asset...'}
+          </p>
+        </div>
+      )}
+
+      {/* Error / Permission Recovery Overlay */}
+      {errorMessage && (
         <div
-          onClick={requestMotionOnTap}
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/75 backdrop-blur-md p-6"
           onPointerDown={e => e.stopPropagation()}
-          className="absolute inset-0 z-40 flex items-center justify-center bg-black/45 backdrop-blur-xs cursor-pointer"
         >
-          <div className="px-6 py-3.5 rounded-full bg-white/15 border border-white/25 backdrop-blur-md text-white text-sm font-semibold shadow-2xl">
-            Tap anywhere to start AR tracking
+          <div className="w-full max-w-sm rounded-3xl border border-white/15 bg-white/10 p-6 text-center shadow-2xl">
+            <p className="text-sm text-white/90 mb-5">{errorMessage}</p>
+            <button
+              type="button"
+              onClick={() => setRetryTick(t => t + 1)}
+              className="w-full py-3 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors cursor-pointer"
+            >
+              Retry AR Camera
+            </button>
           </div>
         </div>
       )}
 
-      {/* Loading Spinner */}
-      {modelLoading && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-xs pointer-events-none">
-          <div className="w-10 h-10 rounded-full border-4 border-white/15 border-t-amber-400 animate-spin" />
-        </div>
-      )}
-
       {/* Bottom-Left Icon-Only Play / Pause Button */}
-      {isPlaced && hasAnimations && !modelLoading && (
+      {isPlaced && hasAnimations && !modelLoading && !errorMessage && (
         <button
           type="button"
           onClick={toggleAnimation}
