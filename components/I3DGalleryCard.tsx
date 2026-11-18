@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import dynamic from 'next/dynamic';
 
@@ -18,9 +19,10 @@ type I3DGalleryCardProps = {
   fileUrl: string;
   accentColor: string;
   index: number;
+  href?: string;
 };
 
-export function I3DGalleryCard({ id, displayName, category, fileName, fileUrl, accentColor, index }: I3DGalleryCardProps) {
+export function I3DGalleryCard({ id, displayName, category, fileName, fileUrl, accentColor, index, href }: I3DGalleryCardProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const ext = (fileName.split('.').pop() || '').toLowerCase();
@@ -29,6 +31,56 @@ export function I3DGalleryCard({ id, displayName, category, fileName, fileUrl, a
   const preloadModal = () => {
     import('./I3DViewerModal');
   };
+
+  const cardInner = (
+    <>
+      {/* Accent gradient overlay */}
+      <div className="i3d-card__accent" />
+
+      {/* Card body */}
+      <div className="i3d-card__body">
+        {/* Rotating wireframe cube */}
+        <div className="i3d-cube-wrap">
+          <div className="i3d-cube">
+            <div className="i3d-cube__face i3d-cube__face--front" />
+            <div className="i3d-cube__face i3d-cube__face--back" />
+            <div className="i3d-cube__face i3d-cube__face--right" />
+            <div className="i3d-cube__face i3d-cube__face--left" />
+            <div className="i3d-cube__face i3d-cube__face--top" />
+            <div className="i3d-cube__face i3d-cube__face--bottom" />
+          </div>
+        </div>
+
+        {/* Display name + category */}
+        <h3 className="i3d-card__name">{displayName}</h3>
+        <p className="i3d-card__category">{category}</p>
+      </div>
+
+      {/* Format badge */}
+      <div className="i3d-card__badge">
+        <span className={`i3d-card__badge-dot ${isGlb ? 'i3d-card__badge-dot--glb' : 'i3d-card__badge-dot--usdz'}`} />
+        {ext.toUpperCase()}
+      </div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        id={id}
+        href={href}
+        className="i3d-card"
+        style={{
+          animationDelay: `${index * 100 + 80}ms`,
+          ['--i3d-accent' as string]: accentColor,
+        }}
+        onMouseEnter={preloadModal}
+        onFocus={preloadModal}
+      >
+        {cardInner}
+      </Link>
+    );
+  }
 
   return (
     <>
@@ -43,39 +95,14 @@ export function I3DGalleryCard({ id, displayName, category, fileName, fileUrl, a
         onMouseEnter={preloadModal}
         onFocus={preloadModal}
       >
-        {/* Accent gradient overlay */}
-        <div className="i3d-card__accent" />
-
-        {/* Card body */}
-        <div className="i3d-card__body">
-          {/* Rotating wireframe cube */}
-          <div className="i3d-cube-wrap">
-            <div className="i3d-cube">
-              <div className="i3d-cube__face i3d-cube__face--front" />
-              <div className="i3d-cube__face i3d-cube__face--back" />
-              <div className="i3d-cube__face i3d-cube__face--right" />
-              <div className="i3d-cube__face i3d-cube__face--left" />
-              <div className="i3d-cube__face i3d-cube__face--top" />
-              <div className="i3d-cube__face i3d-cube__face--bottom" />
-            </div>
-          </div>
-
-          {/* Display name + category */}
-          <h3 className="i3d-card__name">{displayName}</h3>
-          <p className="i3d-card__category">{category}</p>
-        </div>
-
-        {/* Format badge */}
-        <div className="i3d-card__badge">
-          <span className={`i3d-card__badge-dot ${isGlb ? 'i3d-card__badge-dot--glb' : 'i3d-card__badge-dot--usdz'}`} />
-          {ext.toUpperCase()}
-        </div>
+        {cardInner}
       </div>
 
       {isOpen && (
         <I3DViewerModal 
           fileUrl={fileUrl} 
-          fileName={fileName} 
+          fileName={fileName}
+          displayName={displayName}
           onClose={() => setIsOpen(false)} 
         />
       )}

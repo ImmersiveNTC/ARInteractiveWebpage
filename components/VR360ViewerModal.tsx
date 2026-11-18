@@ -1,17 +1,28 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 
 type VR360ViewerModalProps = {
   imageUrl: string;
   title: string;
-  initialGyroActive: boolean;
-  onClose: () => void;
+  initialGyroActive?: boolean;
+  onClose?: () => void;
+  backHref?: string;
+  backLabel?: string;
   isVideo?: boolean;
 };
 
-export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, isVideo = false }: VR360ViewerModalProps) {
+export function VR360ViewerModal({
+  imageUrl,
+  title,
+  initialGyroActive = false,
+  onClose,
+  backHref,
+  backLabel = 'Back to Gallery',
+  isVideo = false,
+}: VR360ViewerModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -407,8 +418,28 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
     };
   }, [gyroActive]);
 
+  const toggleGyro = async () => {
+    if (gyroActive) {
+      setGyroActive(false);
+      return;
+    }
+    const DeviceOrientation = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
+    if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
+      try {
+        const permissionState = await DeviceOrientation.requestPermission();
+        setGyroActive(permissionState === 'granted');
+      } catch (err) {
+        console.error('Error requesting orientation permission:', err);
+      }
+    } else {
+      setGyroActive(true);
+    }
+  };
+
+  const isStandalone = Boolean(backHref) && !onClose;
+
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black overflow-hidden select-none">
+    <div className={isStandalone ? "relative w-full h-screen flex items-center justify-center bg-black overflow-hidden select-none" : "fixed inset-0 z-[120] flex items-center justify-center bg-black overflow-hidden select-none"}>
       
       {/* Hidden Video element for Three.js VideoTexture */}
       {isVideo && (
@@ -432,22 +463,52 @@ export function VR360ViewerModal({ imageUrl, title, initialGyroActive, onClose, 
       </div>
 
       {/* ── Header Overlay (Title + Sub) ── */}
-      <div className="absolute top-6 left-6 z-10 pointer-events-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] max-w-[calc(100%-120px)]">
+      <div className="absolute top-6 left-6 z-10 pointer-events-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] max-w-[calc(100%-180px)]">
         <h2 className="text-xl md:text-2xl font-bold text-white tracking-tight leading-tight">{title}</h2>
         <p className="text-xs text-white/50 mt-1 uppercase tracking-wider font-semibold">360° Spherical Environment</p>
       </div>
 
-      {/* ── Close Button ── */}
-      <button 
-        onClick={onClose}
-        className="absolute top-6 right-6 z-20 w-11 h-11 rounded-full bg-black/40 border border-white/10 hover:bg-black/80 hover:border-white/20 transition-all flex items-center justify-center text-white cursor-pointer active:scale-95 shadow-lg backdrop-blur-md"
-        aria-label="Close VR viewer"
-      >
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
+      {/* ── Top-Right Actions (Gyro toggle on mobile + Back / Close) ── */}
+      <div className="absolute top-6 right-6 z-20 flex items-center gap-2.5">
+        {isMobileDevice && (
+          <button
+            onClick={toggleGyro}
+            className={`px-3.5 h-11 rounded-full border text-xs font-semibold tracking-wide transition-all flex items-center gap-1.5 cursor-pointer shadow-lg backdrop-blur-md ${
+              gyroActive
+                ? 'bg-teal-500/30 border-teal-400/60 text-teal-100'
+                : 'bg-black/40 border-white/15 text-white/80 hover:bg-black/70'
+            }`}
+            aria-label={gyroActive ? 'Disable gyroscope' : 'Enable gyroscope'}
+          >
+            {gyroActive ? 'Motion On' : 'Enable Motion'}
+          </button>
+        )}
+
+        {backHref && (
+          <Link
+            href={backHref}
+            className="px-4 h-11 rounded-full bg-black/40 border border-white/15 hover:bg-black/80 hover:border-white/30 transition-all flex items-center gap-1.5 text-sm font-medium text-white shadow-lg backdrop-blur-md"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            {backLabel}
+          </Link>
+        )}
+
+        {onClose && (
+          <button 
+            onClick={onClose}
+            className="w-11 h-11 rounded-full bg-black/40 border border-white/10 hover:bg-black/80 hover:border-white/20 transition-all flex items-center justify-center text-white cursor-pointer active:scale-95 shadow-lg backdrop-blur-md"
+            aria-label="Close VR viewer"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
+      </div>
 
       {/* ── Loader overlay ── */}
       {isLoading && (

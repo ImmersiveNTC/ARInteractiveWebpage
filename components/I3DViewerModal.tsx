@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -9,7 +10,12 @@ import { USDZLoader } from "three/examples/jsm/loaders/USDZLoader.js";
 type I3DViewerModalProps = {
   fileUrl: string;
   fileName: string;
-  onClose: () => void;
+  displayName?: string;
+  showInteractiveControls?: boolean;
+  embedded?: boolean;
+  backHref?: string;
+  backLabel?: string;
+  onClose?: () => void;
 };
 
 interface KeyframesJson {
@@ -17,10 +23,20 @@ interface KeyframesJson {
   keyframes: Record<string, number | number[]>;
 }
 
-export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalProps) {
+export function I3DViewerModal({
+  fileUrl,
+  fileName,
+  displayName,
+  showInteractiveControls = true,
+  embedded = false,
+  backHref,
+  backLabel = "Back to Gallery",
+  onClose,
+}: I3DViewerModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Animation states
   const animationState = useRef<{
@@ -77,6 +93,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
   // Fetch bespoke JSON config if it exists
   const jsonUrl = fileUrl.substring(0, fileUrl.lastIndexOf('.')) + '.json';
   useEffect(() => {
+    if (!showInteractiveControls) return;
     fetch(jsonUrl)
       .then((res) => {
         if (res.ok) return res.json();
@@ -92,7 +109,7 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
       .catch(() => {
         console.log(`No bespoke JSON found for ${fileName}, using default keyframes.`);
       });
-  }, [jsonUrl, fileName]);
+  }, [jsonUrl, fileName, showInteractiveControls]);
 
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
@@ -155,9 +172,11 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
 
     // Load Model
     const ext = fileName.split('.').pop()?.toLowerCase();
+    setLoadError(null);
     
     const onModelLoaded = (modelScene: THREE.Group, animations?: THREE.AnimationClip[], gltfData?: unknown) => {
       setLoading(false);
+      setLoadError(null);
       engineState.current.modelGroup = modelScene;
 
       // ─── Extract custom JSON config from GLB / glTF ───
@@ -206,7 +225,13 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
 
       const maxDim = Math.max(size.x, size.y, size.z);
       const radius = maxDim * 1.8 || 4;
-      
+
+      camera.near = Math.max(0.01, radius * 0.01);
+      camera.far = Math.max(100, radius * 20);
+      camera.updateProjectionMatrix();
+      controls.minDistance = Math.min(1.5, radius * 0.2);
+      controls.maxDistance = Math.max(10, radius * 5);
+
       // Start camera at the initial rotated angle
       camera.position.set(radius * Math.sin(orbitInitialAngle), 0, radius * Math.cos(orbitInitialAngle));
       camera.lookAt(0, 0, 0);
@@ -253,21 +278,34 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
         onModelLoaded(gltf.scene, gltf.animations, gltf);
       }, undefined, (e) => {
         console.error(e);
+        setLoadError('Unable to render 3D preview for this model in the browser.');
         setLoading(false);
       });
     } else if (ext === 'usdz') {
       const loader = new USDZLoader();
-      loader.load(fileUrl, (usdGroup) => {
-        // USDZLoader returns a Mesh; cast to Group since onModelLoaded only uses
-        // Group-compatible APIs (position, Box3, scene.add, AnimationMixer).
-        onModelLoaded(usdGroup as unknown as THREE.Group, (usdGroup as { animations?: THREE.AnimationClip[] }).animations || []);
-      }, undefined, (e) => {
+      try {
+        loader.load(fileUrl, (usdGroup) => {
+          // USDZLoader returns a Mesh; cast to Group since onModelLoaded only uses
+          // Group-compatible APIs (position, Box3, scene.add, AnimationMixer).
+          onModelLoaded(usdGroup as unknown as THREE.Group, (usdGroup as { animations?: THREE.AnimationClip[] }).animations || []);
+        }, undefined, (e) => {
+          console.error(e);
+          setLoadError('Browser 3D preview is unavailable for this binary USDZ file. Scan the QR code to view on iPhone or download the USDZ.');
+          setLoading(false);
+        });
+      } catch (e) {
         console.error(e);
+        setLoadError('Browser 3D preview is unavailable for this binary USDZ file. Scan the QR code to view on iPhone or download the USDZ.');
         setLoading(false);
-      });
+      }
     } else {
-      // Fallback
-      setTimeout(() => setLoading(false), 0);
+      // Fallback (e.g. .reality files not supported by Three.js)
+      setTimeout(() => {
+        if (ext === 'reality') {
+          setLoadError('Browser 3D preview is not supported for Apple .reality files. Scan the QR code to open in iOS AR Quick Look or download the file.');
+        }
+        setLoading(false);
+      }, 0);
     }
 
     const createMockAnimations = (modelGroup: THREE.Group) => {
@@ -330,8 +368,9 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     };
 
     // Render loop
+    let animationFrameId = 0;
     const animate = (time: number) => {
-      requestAnimationFrame(animate);
+      animationFrameId = requestAnimationFrame(animate);
 
       // Programmatically animate camera orbit during the first second
       if (isOrbitAnimating && orbitStartTime !== null) {
@@ -398,9 +437,10 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
 
       renderer.render(scene, camera);
     };
-    requestAnimationFrame(animate);
+    animationFrameId = requestAnimationFrame(animate);
 
     return () => {
+      cancelAnimationFrame(animationFrameId);
       window.removeEventListener("resize", handleResize);
       renderer.dispose();
       // Wait to dispose controls properly
@@ -546,87 +586,138 @@ export function I3DViewerModal({ fileUrl, fileName, onClose }: I3DViewerModalPro
     anim.isPlaying = true;
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-10">
-      <div className="relative w-full h-full max-w-7xl max-h-[90vh] bg-[#666666] rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col">
-        {/* Header Bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20 relative z-20">
-          <h2 className="text-lg font-medium text-white">{fileName}</h2>
-          <button 
+  const titleText = displayName ?? fileName;
+  const subtitleText = displayName ?? (fileName.substring(0, fileName.lastIndexOf('.')) || fileName);
+  const isStandalone = embedded || (Boolean(backHref) && !onClose);
+
+  const viewerContent = (
+    <div
+      className={
+        embedded
+          ? "relative w-full h-full min-h-[420px] bg-[#666666] flex flex-col overflow-hidden rounded-3xl border border-white/10"
+          : isStandalone
+            ? "relative w-full h-screen bg-[#666666] flex flex-col overflow-hidden"
+            : "relative w-full h-full max-w-7xl max-h-[90vh] bg-[#666666] rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col"
+      }
+    >
+      {/* Header Bar */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20 relative z-20">
+        <div className="flex items-center gap-4 min-w-0">
+          {backHref && (
+            <Link
+              href={backHref}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              {backLabel}
+            </Link>
+          )}
+          <h2 className="text-lg font-medium text-white truncate">{titleText}</h2>
+        </div>
+        {onClose && (
+          <button
             onClick={onClose}
             className="p-2 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+            aria-label="Close 3D viewer"
           >
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
-        </div>
+        )}
+      </div>
 
-        {/* 3D Canvas Container */}
-        <div ref={containerRef} className="relative flex-1 w-full h-full bg-transparent">
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#666666] z-10">
-              <div className="i3d-cube-wrap" style={{ transform: 'scale(3.75)' }}>
-                <div className="i3d-cube">
-                  <div className="i3d-cube__face i3d-cube__face--front" />
-                  <div className="i3d-cube__face i3d-cube__face--back" />
-                  <div className="i3d-cube__face i3d-cube__face--right" />
-                  <div className="i3d-cube__face i3d-cube__face--left" />
-                  <div className="i3d-cube__face i3d-cube__face--top" />
-                  <div className="i3d-cube__face i3d-cube__face--bottom" />
-                </div>
+      {/* 3D Canvas Container */}
+      <div ref={containerRef} className="relative flex-1 w-full h-full bg-transparent">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-[#666666] z-10">
+            <div className="i3d-cube-wrap" style={{ transform: 'scale(3.75)' }}>
+              <div className="i3d-cube">
+                <div className="i3d-cube__face i3d-cube__face--front" />
+                <div className="i3d-cube__face i3d-cube__face--back" />
+                <div className="i3d-cube__face i3d-cube__face--right" />
+                <div className="i3d-cube__face i3d-cube__face--left" />
+                <div className="i3d-cube__face i3d-cube__face--top" />
+                <div className="i3d-cube__face i3d-cube__face--bottom" />
               </div>
             </div>
-          )}
-          <canvas ref={canvasRef} className="w-full h-full outline-none" />
-          
-          {/* TEMPORARY SUBTITLE: Show asset name (Delete block to disable) */}
-          <div className="absolute bottom-6 left-6 pointer-events-none">
-            <span 
-              className="text-yellow-400 font-sans font-thin text-sm tracking-widest uppercase"
-                style={{ fontWeight: 100 }}
-              >
-              {fileName.substring(0, fileName.lastIndexOf('.')) || fileName}
-            </span>
           </div>
+        )}
+        <canvas ref={canvasRef} className="w-full h-full outline-none" />
 
-          {/* Controls Overlay */}
+        {!loading && loadError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-black/35 backdrop-blur-xs z-10">
+            <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center text-white/80 mb-3">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+            </div>
+            <p className="text-sm font-medium text-white/90 max-w-sm">{loadError}</p>
+          </div>
+        )}
+
+        {/* TEMPORARY SUBTITLE: Show asset name (Delete block to disable) */}
+        <div className="absolute bottom-6 left-6 pointer-events-none">
+          <span
+            className="text-yellow-400 font-sans font-thin text-sm tracking-widest uppercase"
+            style={{ fontWeight: 100 }}
+          >
+            {subtitleText}
+          </span>
+        </div>
+
+        {/* Controls Overlay (Interactive mode only) */}
+        {showInteractiveControls && (
           <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-20">
-            <button 
+            <button
               onClick={toggleExplode}
               className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-indigo-500/20 hover:border-indigo-500/50 transition-all shadow-lg backdrop-blur-md"
               title="Toggle Explode"
             >
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                <line x1="12" y1="22.08" x2="12" y2="12"/>
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
               </svg>
             </button>
-            
+
             <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-white/10">
-              <button 
+              <button
                 onClick={() => navigateSequence('next')}
                 className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all shadow-lg backdrop-blur-md"
                 title="Next Sequence Action"
               >
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 18 15 12 9 6"/>
+                  <polyline points="9 18 15 12 9 6" />
                 </svg>
               </button>
-              <button 
+              <button
                 onClick={() => navigateSequence('prev')}
                 className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all shadow-lg backdrop-blur-md"
                 title="Previous Sequence Action"
               >
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="15 18 9 12 15 6"/>
+                  <polyline points="15 18 9 12 15 6" />
                 </svg>
               </button>
             </div>
           </div>
-        </div>
+        )}
       </div>
+    </div>
+  );
+
+  if (isStandalone) {
+    return viewerContent;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-10">
+      {viewerContent}
     </div>
   );
 }
