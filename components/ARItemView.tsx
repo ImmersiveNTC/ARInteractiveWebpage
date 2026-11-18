@@ -471,6 +471,16 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
             <div className="mt-5 pt-5 border-t border-white/10">
               <Link
                 href="/MRTest"
+                onClick={() => {
+                  const DeviceOrientation = (
+                    window as unknown as {
+                      DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
+                    }
+                  ).DeviceOrientationEvent;
+                  if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
+                    DeviceOrientation.requestPermission().catch(() => {});
+                  }
+                }}
                 className="inline-flex items-center justify-center gap-2 w-full py-3 px-5 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 font-semibold text-xs transition-colors"
               >
                 Open Edge Mixed Reality Test (GLB)

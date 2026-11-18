@@ -94,6 +94,16 @@ export function ARGalleryView({
 
             <Link
               href="/MRTest"
+              onClick={() => {
+                const DeviceOrientation = (
+                  window as unknown as {
+                    DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
+                  }
+                ).DeviceOrientationEvent;
+                if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
+                  DeviceOrientation.requestPermission().catch(() => {});
+                }
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 text-xs font-semibold transition-colors"
             >
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
