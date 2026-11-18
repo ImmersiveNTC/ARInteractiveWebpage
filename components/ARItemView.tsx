@@ -10,11 +10,15 @@ type BrowserMode = 'loading' | 'ios-safari-chrome' | 'ios-download' | 'desktop';
 type DownloadState = 'idle' | 'downloaded';
 
 const AR_RETURN_PENDING_KEY = 'ar_quicklook_return_path';
+/** Share of the loading bar used by the download; the rest covers Quick Look opening. */
+const DOWNLOAD_SHARE = 60;
 const emptySubscribe = () => () => {};
 
 /** Files already fully downloaded in this session (kept across client-side navigation). */
 const preloadedUrls = new Set<string>();
 const inflightPreloads = new Map<string, Promise<void>>();
+/** Byte size of each preloaded file, used to estimate how long Quick Look takes to open. */
+const assetSizes = new Map<string, number>();
 
 /**
  * Downloads the AR file once with real progress. The bytes are discarded — the point is to
@@ -33,6 +37,7 @@ function preloadAsset(url: string, onProgress: (progress: number | null) => void
     try {
       const response = await fetch(url, { cache: 'force-cache' });
       const total = Number(response.headers.get('content-length')) || 0;
+      if (total) assetSizes.set(url, total);
       if (!response.body) {
         await response.arrayBuffer();
       } else {
@@ -96,7 +101,6 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
   const fileExtLabel = (item.fileName.split('.').pop() || 'USDZ').toUpperCase();
   const browserMode = useSyncExternalStore(emptySubscribe, getBrowserModeSnapshot, getServerBrowserMode);
   const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
-  const [isLaunching, setIsLaunching] = useState(false);
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
   const [loadState, setLoadState] = useState<'loading' | 'ready'>(() =>
     preloadedUrls.has(item.fileUrl) ? 'ready' : 'loading'
@@ -105,30 +109,92 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
   const [loadProgress, setLoadProgress] = useState<number | null>(() =>
     preloadedUrls.has(item.fileUrl) ? 100 : 0
   );
+  // Progress of the "Quick Look is opening" phase; null when not opening.
+  const [openProgress, setOpenProgress] = useState<number | null>(null);
   const arLinkRef = useRef<HTMLAnchorElement>(null);
   const autoTriggeredRef = useRef(false);
   const pendingLaunchRef = useRef(false);
+  const openCleanupRef = useRef<(() => void) | null>(null);
+
+  const stopOpening = useCallback(() => {
+    openCleanupRef.current?.();
+    openCleanupRef.current = null;
+    setOpenProgress(null);
+  }, []);
+
+  /**
+   * Keeps the bar moving while iOS prepares Quick Look (we can't measure that directly).
+   * The bar eases toward 95% over an estimate based on file size, and jumps to 100% the
+   * moment Quick Look covers the page (the page loses focus / becomes hidden).
+   */
+  const startOpening = useCallback(
+    (startAt: number) => {
+      openCleanupRef.current?.();
+
+      const sizeMb = (assetSizes.get(item.fileUrl) ?? 0) / (1024 * 1024);
+      const estimateMs = Math.min(12000, Math.max(2500, 2000 + sizeMb * 400));
+      const startedAt = performance.now();
+      setOpenProgress(startAt);
+
+      const interval = window.setInterval(() => {
+        const t = (performance.now() - startedAt) / estimateMs;
+        setOpenProgress(Math.round(startAt + (95 - startAt) * (1 - Math.exp(-3 * t))));
+      }, 100);
+
+      let shown = false;
+      const handleShown = () => {
+        if (shown) return;
+        shown = true;
+        window.clearInterval(interval);
+        setOpenProgress(100);
+      };
+      const handleVisibility = () => {
+        if (document.visibilityState === 'hidden') {
+          handleShown();
+        } else if (shown) {
+          // Back from Quick Look: return to the ready button.
+          setTimeout(() => stopOpening(), 300);
+        }
+      };
+      const handleFocus = () => {
+        if (shown) setTimeout(() => stopOpening(), 300);
+      };
+
+      window.addEventListener('blur', handleShown);
+      window.addEventListener('pagehide', handleShown);
+      window.addEventListener('focus', handleFocus);
+      document.addEventListener('visibilitychange', handleVisibility);
+
+      // Safety net: if Quick Look never signals, return to the ready button eventually.
+      const giveUp = window.setTimeout(() => stopOpening(), Math.min(25000, estimateMs * 2 + 5000));
+
+      openCleanupRef.current = () => {
+        window.clearInterval(interval);
+        window.clearTimeout(giveUp);
+        window.removeEventListener('blur', handleShown);
+        window.removeEventListener('pagehide', handleShown);
+        window.removeEventListener('focus', handleFocus);
+        document.removeEventListener('visibilitychange', handleVisibility);
+      };
+    },
+    [item.fileUrl, stopOpening]
+  );
+
+  useEffect(() => () => openCleanupRef.current?.(), []);
 
   /** Opens Quick Look by navigating to the (now cached) file — works without a fresh tap. */
-  const launchQuickLook = useCallback(() => {
-    setIsLaunching(true);
-    try {
-      sessionStorage.setItem(AR_RETURN_PENDING_KEY, window.location.pathname);
-    } catch {
-      // Ignore storage errors.
-    }
-    window.location.href = item.fileUrl;
-    setTimeout(() => {
-      setIsLaunching(false);
-      if (document.visibilityState === 'visible') {
-        try {
-          sessionStorage.removeItem(AR_RETURN_PENDING_KEY);
-        } catch {
-          // Ignore storage errors.
-        }
+  const launchQuickLook = useCallback(
+    (startAt: number) => {
+      startOpening(startAt);
+      try {
+        sessionStorage.setItem(AR_RETURN_PENDING_KEY, window.location.pathname);
+      } catch {
+        // Ignore storage errors.
       }
-    }, 2500);
-  }, [item.fileUrl]);
+      window.location.href = item.fileUrl;
+    },
+    [item.fileUrl, startOpening]
+  );
 
   const triggerFileDownload = useCallback(() => {
     const downloadAnchor = document.createElement('a');
@@ -149,13 +215,13 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
         } catch {
           // Ignore storage access errors in private browsing.
         }
-        setIsLaunching(false);
+        stopOpening();
       }
     };
 
     window.addEventListener('pageshow', handlePageShow);
     return () => window.removeEventListener('pageshow', handlePageShow);
-  }, []);
+  }, [stopOpening]);
 
   useEffect(() => {
     if (autoTriggeredRef.current) return;
@@ -188,7 +254,8 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
         setLoadState('ready');
         if (pendingLaunchRef.current) {
           pendingLaunchRef.current = false;
-          launchQuickLook();
+          // Continue the same bar: download fills 0–60%, opening fills 60–100%.
+          launchQuickLook(DOWNLOAD_SHARE);
         }
       });
 
@@ -205,6 +272,15 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
       return () => clearTimeout(timer);
     }
   }, [browserMode, item.fileUrl, launchQuickLook, triggerFileDownload]);
+
+  // One continuous bar: download fills 0–DOWNLOAD_SHARE%, Quick Look opening fills the rest.
+  const showBar = openProgress !== null || loadState === 'loading';
+  const barProgress: number | null =
+    openProgress !== null
+      ? openProgress
+      : loadProgress === null
+        ? null
+        : Math.round((loadProgress * DOWNLOAD_SHARE) / 100);
 
   const clearReturnFlag = () => {
     try {
@@ -271,21 +347,31 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
               ref={arLinkRef}
               href={item.fileUrl}
               rel="ar"
-              aria-busy={loadState === 'loading'}
+              aria-busy={showBar}
               className={`relative overflow-hidden inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl font-semibold text-sm shadow-lg transition-colors duration-300 ${
-                loadState === 'ready'
+                !showBar
                   ? 'bg-amber-500 hover:bg-amber-400 text-black'
                   : 'bg-amber-950/60 border border-amber-500/30 text-white'
               }`}
               onClick={e => {
+                if (openProgress !== null) {
+                  // Already opening — ignore extra taps.
+                  e.preventDefault();
+                  return;
+                }
                 if (loadState !== 'ready') {
                   // Still downloading: don't start a second download — open as soon as it finishes.
                   e.preventDefault();
                   pendingLaunchRef.current = true;
                   return;
                 }
-                setIsLaunching(true);
-                setTimeout(() => setIsLaunching(false), 3000);
+                // Let the native rel="ar" tap open Quick Look; just show the opening progress.
+                try {
+                  sessionStorage.setItem(AR_RETURN_PENDING_KEY, window.location.pathname);
+                } catch {
+                  // Ignore storage errors.
+                }
+                startOpening(0);
               }}
             >
               {/* Must stay the first child: iOS requires an <img> inside rel="ar" links. */}
@@ -297,21 +383,19 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
                 height={1}
                 style={{ position: 'absolute', width: 1, height: 1, opacity: 0.01, pointerEvents: 'none' }}
               />
-              {loadState === 'loading' && (
+              {showBar && (
                 <span
                   aria-hidden="true"
                   className={`absolute inset-y-0 left-0 bg-amber-500 transition-[width] duration-300 ease-out ${
-                    loadProgress === null ? 'w-full animate-pulse opacity-60' : ''
+                    barProgress === null ? 'w-full animate-pulse opacity-60' : ''
                   }`}
-                  style={loadProgress === null ? undefined : { width: `${loadProgress}%` }}
+                  style={barProgress === null ? undefined : { width: `${barProgress}%` }}
                 />
               )}
               <span className="relative z-10 drop-shadow-sm">
-                {loadState === 'loading'
-                  ? `Loading AR Experience${loadProgress ? ` ${loadProgress}%` : '...'}`
-                  : isLaunching
-                    ? 'Opening AR Experience...'
-                    : 'View AR Experience'}
+                {showBar
+                  ? `Loading AR Experience${barProgress ? ` ${barProgress}%` : '...'}`
+                  : 'View AR Experience'}
               </span>
             </a>
           </div>
