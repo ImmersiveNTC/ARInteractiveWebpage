@@ -467,6 +467,15 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
                 ? 'Downloaded — Tap to download again'
                 : 'Or download AR file for iPhone Files app'}
             </button>
+
+            <div className="mt-5 pt-5 border-t border-white/10">
+              <Link
+                href="/MRTest"
+                className="inline-flex items-center justify-center gap-2 w-full py-3 px-5 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 font-semibold text-xs transition-colors"
+              >
+                Open Edge Mixed Reality Test (GLB)
+              </Link>
+            </div>
           </div>
         </main>
       )}

@@ -74,21 +74,34 @@ export function ARGalleryView({
           <h1 className="iosar-header__title">{title}</h1>
           <p className="iosar-header__sub">{subtitle}</p>
 
-          <div className={`iosar-device-banner ${isIOS ? 'iosar-device-banner--ios' : 'iosar-device-banner--desktop'}`}>
-            {isIOS ? (
-              <>
-                <span className="iosar-device-banner__dot" />
-                <span>iPhone detected — tap any model card to open its AR page</span>
-              </>
-            ) : (
-              <>
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
-                  <line x1="12" y1="18" x2="12.01" y2="18" />
-                </svg>
-                <span>Click any model to inspect it in 3D or scan its QR code on iPhone</span>
-              </>
-            )}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className={`iosar-device-banner ${isIOS ? 'iosar-device-banner--ios' : 'iosar-device-banner--desktop'}`}>
+              {isIOS ? (
+                <>
+                  <span className="iosar-device-banner__dot" />
+                  <span>iPhone detected — tap any model card to open its AR page</span>
+                </>
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+                    <line x1="12" y1="18" x2="12.01" y2="18" />
+                  </svg>
+                  <span>Click any model to inspect it in 3D or scan its QR code on iPhone</span>
+                </>
+              )}
+            </div>
+
+            <Link
+              href="/MRTest"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 text-xs font-semibold transition-colors"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+              Open Edge MR Test (GLB)
+            </Link>
           </div>
         </header>
 
