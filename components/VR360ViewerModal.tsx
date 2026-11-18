@@ -29,8 +29,9 @@ export function VR360ViewerModal({
 
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [gyroActive, setGyroActive] = useState(initialGyroActive);
-  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [gyroGrantedOnTouch, setGyroGrantedOnTouch] = useState(false);
+  const gyroActive = initialGyroActive || gyroGrantedOnTouch;
+  const gyroActiveRef = useRef(gyroActive);
   const [showInstructions, setShowInstructions] = useState(true);
 
   // Playback States
@@ -40,8 +41,8 @@ export function VR360ViewerModal({
   const [duration, setDuration] = useState(0);
 
   useEffect(() => {
-    setGyroActive(initialGyroActive);
-  }, [initialGyroActive]);
+    gyroActiveRef.current = gyroActive;
+  }, [gyroActive]);
 
   // Sync state with video element
   const togglePlay = () => {
@@ -122,24 +123,52 @@ export function VR360ViewerModal({
     gyroGamma: null as number | null,
   });
 
-  // Detect mobile device
+  // Hide instructions after 4 seconds, and allow direct iOS link visitors to activate motion on first touch
   useEffect(() => {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    setIsMobileDevice(isMobile);
-
-    // Hide instructions after 4 seconds
     const timer = setTimeout(() => {
       setShowInstructions(false);
     }, 4000);
-    return () => clearTimeout(timer);
+
+    const container = containerRef.current;
+    const DeviceOrientation = (
+      window as unknown as {
+        DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
+      }
+    ).DeviceOrientationEvent;
+
+    const handleFirstTouchPermission = async () => {
+      if (!isMobile || gyroActiveRef.current) return;
+      if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
+        try {
+          const permissionState = await DeviceOrientation.requestPermission();
+          if (permissionState === 'granted') {
+            setGyroGrantedOnTouch(true);
+          }
+        } catch {
+          // Ignore rejected or non-gesture permission errors.
+        }
+      }
+    };
+
+    if (container && isMobile && DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
+      container.addEventListener('touchend', handleFirstTouchPermission, { once: true, passive: true });
+    }
+
+    return () => {
+      clearTimeout(timer);
+      if (container) {
+        container.removeEventListener('touchend', handleFirstTouchPermission);
+      }
+    };
   }, []);
 
   // Three.js Lifecycle
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
 
-    let width = containerRef.current.clientWidth;
-    let height = containerRef.current.clientHeight;
+    const width = containerRef.current.clientWidth;
+    const height = containerRef.current.clientHeight;
 
     // 1. Create Scene & Camera
     const scene = new THREE.Scene();
@@ -158,7 +187,7 @@ export function VR360ViewerModal({
     if (isVideo && videoRef.current) {
       videoElement = videoRef.current;
       texture = new THREE.VideoTexture(videoElement);
-      setIsLoading(false);
+      queueMicrotask(() => setIsLoading(false));
       videoElement.play().catch(err => {
         console.warn('Autoplay failed/blocked by browser, requiring user interaction:', err);
       });
@@ -297,7 +326,7 @@ export function VR360ViewerModal({
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
-      if (gyroActive && state.gyroAlpha !== null && state.gyroBeta !== null && state.gyroGamma !== null) {
+      if (gyroActiveRef.current && state.gyroAlpha !== null && state.gyroBeta !== null && state.gyroGamma !== null) {
         // 1. Convert absolute phone orientation angles to radians
         const alphaRad = THREE.MathUtils.degToRad(state.gyroAlpha);
         const betaRad = THREE.MathUtils.degToRad(state.gyroBeta);
@@ -316,8 +345,8 @@ export function VR360ViewerModal({
         // 3. Get screen orientation
         let screenAngle = 0;
         if (typeof window !== 'undefined') {
-          const win = window as any;
-          if ('orientation' in win) {
+          const win = window as Window & { orientation?: number };
+          if (typeof win.orientation === 'number') {
             screenAngle = win.orientation || 0;
           } else if (win.screen && win.screen.orientation) {
             screenAngle = win.screen.orientation.angle || 0;
@@ -418,24 +447,6 @@ export function VR360ViewerModal({
     };
   }, [gyroActive]);
 
-  const toggleGyro = async () => {
-    if (gyroActive) {
-      setGyroActive(false);
-      return;
-    }
-    const DeviceOrientation = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
-    if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
-      try {
-        const permissionState = await DeviceOrientation.requestPermission();
-        setGyroActive(permissionState === 'granted');
-      } catch (err) {
-        console.error('Error requesting orientation permission:', err);
-      }
-    } else {
-      setGyroActive(true);
-    }
-  };
-
   const isStandalone = Boolean(backHref) && !onClose;
 
   return (
@@ -468,22 +479,8 @@ export function VR360ViewerModal({
         <p className="text-xs text-white/50 mt-1 uppercase tracking-wider font-semibold">360° Spherical Environment</p>
       </div>
 
-      {/* ── Top-Right Actions (Gyro toggle on mobile + Back / Close) ── */}
+      {/* ── Top-Right Actions (Back / Close) ── */}
       <div className="absolute top-6 right-6 z-20 flex items-center gap-2.5">
-        {isMobileDevice && (
-          <button
-            onClick={toggleGyro}
-            className={`px-3.5 h-11 rounded-full border text-xs font-semibold tracking-wide transition-all flex items-center gap-1.5 cursor-pointer shadow-lg backdrop-blur-md ${
-              gyroActive
-                ? 'bg-teal-500/30 border-teal-400/60 text-teal-100'
-                : 'bg-black/40 border-white/15 text-white/80 hover:bg-black/70'
-            }`}
-            aria-label={gyroActive ? 'Disable gyroscope' : 'Enable gyroscope'}
-          >
-            {gyroActive ? 'Motion On' : 'Enable Motion'}
-          </button>
-        )}
-
         {backHref && (
           <Link
             href={backHref}

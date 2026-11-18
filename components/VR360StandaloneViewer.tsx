@@ -1,6 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useSyncExternalStore } from 'react';
+import { VR360_GYRO_ALLOWED_KEY } from './VR360GalleryView';
 
 const VR360ViewerModal = dynamic(
   () => import('./VR360ViewerModal').then(mod => mod.VR360ViewerModal),
@@ -23,7 +25,42 @@ type VR360StandaloneViewerProps = {
   isVideo?: boolean;
 };
 
+const emptySubscribe = () => () => {};
+
+function getInitialGyroSnapshot(): boolean {
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
+  if (!isMobile) return false;
+
+  const DeviceOrientation = (
+    window as unknown as {
+      DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
+    }
+  ).DeviceOrientationEvent;
+
+  if (DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function') {
+    try {
+      return sessionStorage.getItem(VR360_GYRO_ALLOWED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getServerGyroSnapshot(): boolean {
+  return false;
+}
+
 /** Client wrapper that renders the Three.js 360 viewer as a standalone full-screen page. */
 export function VR360StandaloneViewer(props: VR360StandaloneViewerProps) {
-  return <VR360ViewerModal {...props} initialGyroActive={false} />;
+  const initialGyroActive = useSyncExternalStore(
+    emptySubscribe,
+    getInitialGyroSnapshot,
+    getServerGyroSnapshot
+  );
+
+  return <VR360ViewerModal {...props} initialGyroActive={initialGyroActive} />;
 }
