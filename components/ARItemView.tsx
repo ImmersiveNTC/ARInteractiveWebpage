@@ -89,6 +89,32 @@ function getServerPageUrl(): string {
   return '';
 }
 
+function checkReturnedFromQuickLook(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const navEntry = performance.getEntriesByType('navigation')[0] as
+      | PerformanceNavigationTiming
+      | undefined;
+    const pendingPath = sessionStorage.getItem(AR_RETURN_PENDING_KEY);
+    return pendingPath === window.location.pathname || navEntry?.type === 'back_forward';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Converts an https:// URL into Apple's native Safari URL scheme on iOS so Edge/third-party
+ * browsers can hand off the AR subpage directly to Safari for native AR Quick Look.
+ */
+function getSafariSchemeUrl(httpsUrl: string): string {
+  const match = navigator.userAgent.match(/OS (\d+)_/);
+  const iosMajor = match ? parseInt(match[1], 10) : 17;
+  if (iosMajor > 0 && iosMajor < 17) {
+    return `com-apple-mobilesafari-tab:${httpsUrl}`;
+  }
+  return httpsUrl.replace(/^https?:\/\//i, 'x-safari-https://');
+}
+
 type ARItemViewProps = {
   item: AssetItem;
   backHref: '/ARs' | '/ARi';
@@ -103,11 +129,11 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
   const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
   const [loadState, setLoadState] = useState<'loading' | 'ready'>(() =>
-    preloadedUrls.has(item.fileUrl) ? 'ready' : 'loading'
+    preloadedUrls.has(item.fileUrl) || checkReturnedFromQuickLook() ? 'ready' : 'loading'
   );
   // 0–100 when the size is known, null while the size is unknown.
   const [loadProgress, setLoadProgress] = useState<number | null>(() =>
-    preloadedUrls.has(item.fileUrl) ? 100 : 0
+    preloadedUrls.has(item.fileUrl) || checkReturnedFromQuickLook() ? 100 : 0
   );
   // Progress of the "Quick Look is opening" phase; null when not opening.
   const [openProgress, setOpenProgress] = useState<number | null>(null);
@@ -124,8 +150,8 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
 
   /**
    * Keeps the bar moving while iOS prepares Quick Look (we can't measure that directly).
-   * The bar eases toward 95% over an estimate based on file size, and jumps to 100% the
-   * moment Quick Look covers the page (the page loses focus / becomes hidden).
+   * The bar eases toward 95% over an estimate based on file size, and resets to empty as soon
+   * as Quick Look covers the page so it is empty when the user closes Quick Look and returns.
    */
   const startOpening = useCallback(
     (startAt: number) => {
@@ -141,28 +167,18 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
         setOpenProgress(Math.round(startAt + (95 - startAt) * (1 - Math.exp(-3 * t))));
       }, 100);
 
-      let shown = false;
-      const handleShown = () => {
-        if (shown) return;
-        shown = true;
-        window.clearInterval(interval);
-        setOpenProgress(100);
+      const handlePageHidden = () => {
+        // Quick Look is now covering the screen — reset the bar to empty so when the user
+        // closes Quick Look, the button is already in its idle empty state.
+        stopOpening();
       };
       const handleVisibility = () => {
         if (document.visibilityState === 'hidden') {
-          handleShown();
-        } else if (shown) {
-          // Back from Quick Look: return to the ready button.
-          setTimeout(() => stopOpening(), 300);
+          handlePageHidden();
         }
       };
-      const handleFocus = () => {
-        if (shown) setTimeout(() => stopOpening(), 300);
-      };
 
-      window.addEventListener('blur', handleShown);
-      window.addEventListener('pagehide', handleShown);
-      window.addEventListener('focus', handleFocus);
+      window.addEventListener('pagehide', handlePageHidden);
       document.addEventListener('visibilitychange', handleVisibility);
 
       // Safety net: if Quick Look never signals, return to the ready button eventually.
@@ -171,9 +187,7 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
       openCleanupRef.current = () => {
         window.clearInterval(interval);
         window.clearTimeout(giveUp);
-        window.removeEventListener('blur', handleShown);
-        window.removeEventListener('pagehide', handleShown);
-        window.removeEventListener('focus', handleFocus);
+        window.removeEventListener('pagehide', handlePageHidden);
         document.removeEventListener('visibilitychange', handleVisibility);
       };
     },
@@ -207,6 +221,28 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
     setDownloadState('downloaded');
   }, [item.fileName, item.fileUrl]);
 
+  /**
+   * Launches the current AR subpage inside Safari via Apple's URL scheme (`x-safari-https://`),
+   * with a timeout fallback to file download if the scheme is blocked or cancelled.
+   */
+  const launchInSafariOrFallback = useCallback(
+    (withDownloadFallback: boolean) => {
+      const targetUrl = window.location.href;
+      const appScheme = getSafariSchemeUrl(targetUrl);
+      const start = Date.now();
+      window.location.href = appScheme;
+
+      if (withDownloadFallback) {
+        window.setTimeout(() => {
+          if (document.visibilityState === 'visible' && Date.now() - start < 2200) {
+            triggerFileDownload();
+          }
+        }, 1600);
+      }
+    },
+    [triggerFileDownload]
+  );
+
   useEffect(() => {
     const handlePageShow = (event: PageTransitionEvent) => {
       if (event.persisted) {
@@ -229,22 +265,19 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
     if (browserMode === 'ios-safari-chrome') {
       autoTriggeredRef.current = true;
 
-      let returnedFromQuickLook = false;
-      try {
-        const navEntry = performance.getEntriesByType('navigation')[0] as
-          | PerformanceNavigationTiming
-          | undefined;
-        const pendingPath = sessionStorage.getItem(AR_RETURN_PENDING_KEY);
-        if (pendingPath === window.location.pathname || navEntry?.type === 'back_forward') {
+      const returnedFromQuickLook = checkReturnedFromQuickLook();
+      if (returnedFromQuickLook) {
+        try {
           sessionStorage.removeItem(AR_RETURN_PENDING_KEY);
-          returnedFromQuickLook = true;
+        } catch {
+          // Ignore storage errors.
         }
-      } catch {
-        // Ignore storage errors.
+        preloadedUrls.add(item.fileUrl);
+        return;
       }
 
-      // Auto-open Quick Look once the file has finished preloading (skip when returning from Quick Look).
-      pendingLaunchRef.current = !returnedFromQuickLook;
+      // Auto-open Quick Look once the file has finished preloading.
+      pendingLaunchRef.current = true;
 
       let cancelled = false;
       preloadAsset(item.fileUrl, progress => {
@@ -267,11 +300,12 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
     if (browserMode === 'ios-download') {
       autoTriggeredRef.current = true;
       const timer = setTimeout(() => {
-        triggerFileDownload();
+        // Attempt to hand off directly to Safari via iOS URL scheme so Quick Look opens natively.
+        launchInSafariOrFallback(false);
       }, 120);
       return () => clearTimeout(timer);
     }
-  }, [browserMode, item.fileUrl, launchQuickLook, triggerFileDownload]);
+  }, [browserMode, item.fileUrl, launchInSafariOrFallback, launchQuickLook]);
 
   // One continuous bar: download fills 0–DOWNLOAD_SHARE%, Quick Look opening fills the rest.
   const showBar = openProgress !== null || loadState === 'loading';
@@ -291,7 +325,7 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
   };
 
   return (
-    <div className="app-page min-h-screen text-white font-sans flex flex-col">
+    <div className="app-page min-h-dvh text-white font-sans flex flex-col">
       {/* Top Bar */}
       <header className="w-full max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 border-b border-white/10">
         <div className="flex items-center gap-4 min-w-0">
@@ -348,11 +382,7 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
               href={item.fileUrl}
               rel="ar"
               aria-busy={showBar}
-              className={`relative overflow-hidden inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl font-semibold text-sm shadow-lg transition-colors duration-300 ${
-                !showBar
-                  ? 'bg-amber-500 hover:bg-amber-400 text-black'
-                  : 'bg-amber-950/60 border border-amber-500/30 text-white'
-              }`}
+              className="relative overflow-hidden inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl font-semibold text-sm shadow-lg transition-colors duration-300 bg-amber-950/60 hover:bg-amber-900/50 border border-amber-500/35 text-white"
               onClick={e => {
                 if (openProgress !== null) {
                   // Already opening — ignore extra taps.
@@ -365,7 +395,7 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
                   pendingLaunchRef.current = true;
                   return;
                 }
-                // Let the native rel="ar" tap open Quick Look; just show the opening progress.
+                // Let the native rel="ar" tap open Quick Look; fill the orange bar while it opens.
                 try {
                   sessionStorage.setItem(AR_RETURN_PENDING_KEY, window.location.pathname);
                 } catch {
@@ -416,36 +446,27 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
             <h1 className="text-2xl font-bold text-white mb-2">{item.displayName}</h1>
             <p className="text-sm text-white/60 mb-6">
               {downloadState === 'downloaded'
-                ? 'Your AR file download has started. Open it from your browser\u2019s Downloads to view it in AR.'
-                : 'Download the AR file, then open it from your browser\u2019s Downloads to view it in AR.'}
+                ? 'AR file downloaded. Tap Share \u2192 Save to Files, then open it from the iPhone Files app to view in AR.'
+                : 'Edge on iPhone requires Safari Quick Look to render 3D AR models. Tap below to launch in AR Quick Look.'}
             </p>
 
-            {downloadState !== 'downloaded' ? (
-              <button
-                type="button"
-                onClick={triggerFileDownload}
-                className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors shadow-lg cursor-pointer"
-              >
-                Download AR Experience
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  disabled
-                  className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl bg-white/10 border border-white/15 text-white/60 font-semibold text-sm cursor-default"
-                >
-                  Downloaded — Open from Downloads
-                </button>
-                <button
-                  type="button"
-                  onClick={triggerFileDownload}
-                  className="mt-4 inline-block text-xs text-amber-300/80 hover:text-amber-300 underline underline-offset-4 transition-colors cursor-pointer"
-                >
-                  Didn&apos;t start? Download AR Experience
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={() => launchInSafariOrFallback(true)}
+              className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors shadow-lg cursor-pointer"
+            >
+              View AR Experience
+            </button>
+
+            <button
+              type="button"
+              onClick={triggerFileDownload}
+              className="mt-4 inline-block text-xs text-amber-300/80 hover:text-amber-300 underline underline-offset-4 transition-colors cursor-pointer"
+            >
+              {downloadState === 'downloaded'
+                ? 'Downloaded — Tap to download again'
+                : 'Or download AR file for iPhone Files app'}
+            </button>
           </div>
         </main>
       )}

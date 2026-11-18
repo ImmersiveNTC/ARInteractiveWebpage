@@ -91,7 +91,7 @@ export function VR360GalleryView({
   };
 
   return (
-    <div className="app-page min-h-screen text-white font-sans flex flex-col">
+    <div className="app-page min-h-dvh text-white font-sans flex flex-col">
       <GalleryNav activePage={activePage} />
 
       <main className="mx-auto w-full max-w-7xl px-6 pt-8 pb-16 md:pt-12 md:pb-24 flex-1">

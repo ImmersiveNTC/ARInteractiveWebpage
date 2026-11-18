@@ -62,9 +62,9 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
 
 /* ---- Landing + shared visuals ---- */
 .app-page {
-  min-height: 100svh;
+  min-height: 100dvh;
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
   background: radial-gradient(
       1400px 900px at 20% 10%,
       rgba(160, 88, 255, 0.18),

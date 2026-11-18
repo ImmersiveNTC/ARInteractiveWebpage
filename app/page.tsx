@@ -130,7 +130,7 @@ export default function Home() {
   };
 
   return (
-    <div className="app-page min-h-screen text-white font-sans flex flex-col items-center justify-center p-6 bg-[#0a0a0a]">
+    <div className="app-page min-h-dvh text-white font-sans flex flex-col items-center justify-start md:justify-center p-6 pt-10 md:p-6 bg-[#0a0a0a]">
       {/* Header */}
       <header className="mb-8 md:mb-10 text-center">
         <h1 className="text-4xl md:text-5xl font-bold mb-4 tracking-tight">

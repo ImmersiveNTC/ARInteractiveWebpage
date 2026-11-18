@@ -20,9 +20,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className="font-sans h-full antialiased"
+      className="font-sans antialiased"
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-dvh flex flex-col overflow-x-hidden">{children}</body>
     </html>
   );
 }

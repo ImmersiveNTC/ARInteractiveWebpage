@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { useEffect } from 'react';
 
 export type GalleryPageKey =
   | '3Ds'
@@ -65,8 +68,23 @@ const NAV_TABS: NavTab[] = [
 ];
 
 export function GalleryNav({ activePage }: GalleryNavProps) {
+  useEffect(() => {
+    const resetScroll = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+    resetScroll();
+    const rafId = requestAnimationFrame(resetScroll);
+    const timerId = window.setTimeout(resetScroll, 60);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.clearTimeout(timerId);
+    };
+  }, [activePage]);
+
   return (
-    <nav className="w-full max-w-7xl mx-auto px-6 pt-8 flex flex-col lg:flex-row items-center justify-between gap-4 border-b border-white/5 pb-6">
+    <nav className="w-full max-w-7xl mx-auto px-6 pt-10 md:pt-8 flex flex-col lg:flex-row items-center justify-between gap-4 border-b border-white/5 pb-6">
       <Link
         href="/"
         className="flex items-center gap-2 text-white/60 hover:text-white transition-colors group text-sm font-medium shrink-0"
