@@ -115,13 +115,17 @@ XR8.run({
    - Inside `arSceneModule.onStart`:
      - Set `renderer.outputColorSpace = THREE.SRGBColorSpace`, `renderer.toneMapping = THREE.ACESFilmicToneMapping`, `renderer.toneMappingExposure = 1.1`.
      - Enable `renderer.shadowMap.enabled = true` (`PCFSoftShadowMap`) with a `THREE.ShadowMaterial({ opacity: 0.36 })` plane positioned at the ground surface (`baseSurfaceY + 0.002`) so the object casts a grounded real-time shadow (and visibly lifts off its shadow when elevated).
-3. **Initial Camera Origin & Hybrid Hit-Test**:
-   - In `onStart`, initialize `camera.position.set(0, 1.4, 0)` and call `XR8.XrController.updateCameraProjectionMatrix({ origin: camera.position, facing: camera.quaternion })`.
+3. **Initial Camera Origin, Scale Multiplier & Hybrid Hit-Test**:
+   - In `scale: 'responsive'`, 8th Wall sets its internal world scale multiplier `d = origin.y` (`xr-slam.js`). Using `origin.y = 1.0` (instead of `1.4+`) prevents unnecessary translation amplification, especially when viewing on closer surfaces/desks.
+   - Pass tightened depth clipping planes (`cam: { nearClipPlane: 0.08, farClipPlane: 40.0 }`) to `XR8.XrController.updateCameraProjectionMatrix` for improved mobile WebGL depth precision.
    - While scanning (`!isPlaced`), call `XR8.XrController.hitTest(normX, normY, ['DETECTED_SURFACE', 'ESTIMATED_SURFACE'])` first, falling back to raycasting the SLAM-tracked `camera` onto the horizontal ground plane (`y = baseSurfaceY + heightOffset`).
    - Once placed (`isPlaced = true`), lock the model's world `(x, z)` coordinates unless the user explicitly drags with 1 finger.
-4. **No Competing iOS Permission Prompts**:
+4. **Adaptive One-Euro 6DoF Pose Stabilizer (iPhone OIS-vs-IMU Hand-Shake Fix)**:
+   - On iPhone 15 / 15 Pro, hardware Sensor-Shift OIS stabilizes tiny hand tremors (`4–15 Hz`) out of the `getUserMedia` camera video, while the chassis IMU still reports those micro-tremors to SLAM with ~33ms lower latency than the video frame—causing tiny hand shakes to appear amplified on screen.
+   - In `arSceneModule.onUpdate` (which runs after `XR8.Threejs.onUpdate` overwrites the raw camera pose and before `XR8.Threejs.onRender` draws the scene), apply an **Adaptive One-Euro Filter** to both `camera.position` (low cutoff `0.35–0.75 Hz` when still, ramping up with `beta = 8.0` while walking) and `camera.quaternion` (`1.4–2.2 Hz` inside `< 0.15°` micro-tremor knee, ramping up with `beta = 28.0` on intentional pans) plus `sceneCamera.updateMatrixWorld(true)`.
+5. **No Competing iOS Permission Prompts**:
    - Do **not** trigger `DeviceOrientationEvent.requestPermission()` or `DeviceMotionEvent.requestPermission()` inside `<Link>` click handlers leading to an 8th Wall page. Let `xr.js` manage all camera and sensor permissions cleanly.
-5. **Clean Unmount on Route Change**:
+6. **Clean Unmount on Route Change**:
    - Always call `XR8.stop()` and `XR8.clearCameraPipelineModules()` in React's `useEffect` cleanup and on the Back button `onClick` so the camera hardware is released cleanly and revisiting the page works without duplicate pipelines.
 
 ---

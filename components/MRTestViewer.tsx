@@ -71,6 +71,7 @@ type XR8Global = {
       enableLighting?: boolean;
     }) => void;
     updateCameraProjectionMatrix: (opts: {
+      cam?: { nearClipPlane?: number; farClipPlane?: number };
       origin?: { x: number; y: number; z: number };
       facing?: { x: number; y: number; z: number; w: number };
     }) => void;
@@ -558,6 +559,22 @@ export function MRTestViewer() {
         let dirLight: THREE.DirectionalLight | null = null;
         const clock = new THREE.Clock();
 
+        // Adaptive One-Euro 6DoF Pose Stabilizer state (eliminates iPhone OIS-vs-IMU tremor amplification)
+        const poseFilter = {
+          initialized: false,
+          pos: new THREE.Vector3(),
+          quat: new THREE.Quaternion(),
+          rawPos: new THREE.Vector3(),
+          rawQuat: new THREE.Quaternion(),
+          posSpeed: 0,
+          rotSpeed: 0,
+        };
+
+        const oneEuroAlpha = (cutoffHz: number, dtSec: number): number => {
+          const tau = 1 / (2 * Math.PI * cutoffHz);
+          return 1 / (1 + tau / Math.max(dtSec, 1 / 120));
+        };
+
         const arSceneModule: XR8PipelineModule = {
           name: 'cabinet-slam-scene',
           onCameraStatusChange: ({ status }) => {
@@ -588,9 +605,10 @@ export function MRTestViewer() {
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-            // Place initial virtual camera at natural standing height (1.4m above y=0 ground plane)
-            camera.position.set(0, 1.4, 0);
+            // Use origin.y = 1.0 (avoiding responsive scale amplification) and tighten clip planes for crisp depth precision
+            camera.position.set(0, 1.0, 0);
             XR8.XrController.updateCameraProjectionMatrix({
+              cam: { nearClipPlane: 0.08, farClipPlane: 40.0 },
               origin: camera.position,
               facing: camera.quaternion,
             });
@@ -684,7 +702,7 @@ export function MRTestViewer() {
                 const size = box.getSize(new THREE.Vector3());
                 const center = box.getCenter(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z) || 1;
-                const normScale = 1.15 / maxDim;
+                const normScale = 0.85 / maxDim;
 
                 // Bottom-align model to rest cleanly on the ground plane
                 root.position.set(
@@ -732,9 +750,63 @@ export function MRTestViewer() {
             setEngineReady(true);
           },
           onUpdate: () => {
-            const delta = Math.min(clock.getDelta(), 0.1);
+            const delta = Math.min(Math.max(clock.getDelta(), 1 / 120), 0.1);
             if (mixerRef.current) {
               mixerRef.current.update(delta);
+            }
+
+            // 1. Apply Adaptive One-Euro 6DoF Filter to suppress iPhone OIS-vs-IMU hand-shake amplification
+            // while keeping fast pans and walking responsive with near-zero lag.
+            if (sceneCamera) {
+              poseFilter.rawPos.copy(sceneCamera.position);
+              poseFilter.rawQuat.copy(sceneCamera.quaternion);
+
+              if (!poseFilter.initialized) {
+                poseFilter.pos.copy(poseFilter.rawPos);
+                poseFilter.quat.copy(poseFilter.rawQuat);
+                poseFilter.initialized = true;
+              } else {
+                // Position filtering (crushes monocular SLAM lateral/depth micro-jitter when holding still)
+                const posDist = poseFilter.pos.distanceTo(poseFilter.rawPos);
+                // Guard against large SLAM relocalization teleports
+                if (posDist > 0.75) {
+                  poseFilter.pos.copy(poseFilter.rawPos);
+                  poseFilter.posSpeed = 0;
+                } else {
+                  const instPosSpeed = posDist / delta;
+                  poseFilter.posSpeed +=
+                    (instPosSpeed - poseFilter.posSpeed) * oneEuroAlpha(1.0, delta);
+                  // Soft micro-tremor knee (< 3mm) holds cutoff very low; walking ramps cutoff smoothly
+                  const posCutoff =
+                    posDist < 0.003 ? 0.35 : 0.75 + 8.0 * poseFilter.posSpeed;
+                  poseFilter.pos.lerp(
+                    poseFilter.rawPos,
+                    oneEuroAlpha(posCutoff, delta)
+                  );
+                }
+
+                // Rotation filtering (absorbs 5–15Hz chassis tremor that iPhone OIS already removed from video)
+                const rotAngle = poseFilter.quat.angleTo(poseFilter.rawQuat);
+                if (rotAngle > 0.6) {
+                  poseFilter.quat.copy(poseFilter.rawQuat);
+                  poseFilter.rotSpeed = 0;
+                } else {
+                  const instRotSpeed = rotAngle / delta;
+                  poseFilter.rotSpeed +=
+                    (instRotSpeed - poseFilter.rotSpeed) * oneEuroAlpha(1.5, delta);
+                  // Micro-tremor knee (< 0.15 deg) damps hand shake; intentional pans jump to 20-60Hz (zero lag)
+                  const rotCutoff =
+                    rotAngle < 0.0026 ? 1.4 : 2.2 + 28.0 * poseFilter.rotSpeed;
+                  poseFilter.quat.slerp(
+                    poseFilter.rawQuat,
+                    oneEuroAlpha(rotCutoff, delta)
+                  );
+                }
+
+                sceneCamera.position.copy(poseFilter.pos);
+                sceneCamera.quaternion.copy(poseFilter.quat);
+                sceneCamera.updateMatrixWorld(true);
+              }
             }
 
             const state = stateRef.current;
