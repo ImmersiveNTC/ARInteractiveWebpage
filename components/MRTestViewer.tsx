@@ -159,6 +159,7 @@ export function MRTestViewer() {
   const [modelLoading, setModelLoading] = useState(true);
   const [hasAnimations, setHasAnimations] = useState(false);
   const [animPlaying, setAnimPlaying] = useState(false);
+  const [elevationLabel, setElevationLabel] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
@@ -391,9 +392,8 @@ export function MRTestViewer() {
       if (!stateRef.current.isPlaced && wasTap && sceneCamera) {
         // Drop and lock the cabinet at the orange circle pointer's SLAM world coordinate
         stateRef.current.currentPos.copy(stateRef.current.targetPos);
-        stateRef.current.baseSurfaceY = stateRef.current.currentPos.y;
-        stateRef.current.heightOffset = 0;
-        stateRef.current.targetHeightOffset = 0;
+        stateRef.current.baseSurfaceY =
+          stateRef.current.currentPos.y - stateRef.current.heightOffset;
         stateRef.current.modelYaw = Math.atan2(
           sceneCamera.position.x - stateRef.current.currentPos.x,
           sceneCamera.position.z - stateRef.current.currentPos.z
@@ -403,8 +403,23 @@ export function MRTestViewer() {
       }
     };
 
-    // Multi-touch: 2-finger pinch (scale) + twist (Y-axis rotation), 3-finger swipe up/down (height)
+    const startThreeFingerElevation = (touches: TouchList) => {
+      stateRef.current.multiTouchLock = true;
+      stateRef.current.threeFingerActive = true;
+      stateRef.current.twoFingerActive = false;
+      stateRef.current.isDragging = false;
+      stateRef.current.movedDuringTap = true;
+      const avgY = (touches[0].clientY + touches[1].clientY + touches[2].clientY) / 3;
+      stateRef.current.threeFingerStartY = avgY;
+      stateRef.current.threeFingerStartHeight = stateRef.current.targetHeightOffset;
+    };
+
+    // Multi-touch: 2-finger pinch (scale) + twist (Y-axis rotation), 3-finger swipe up/down (elevation)
     const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        // Prevent iOS system 2/3-finger gestures (zoom, undo/redo HUD) from cancelling touches
+        e.preventDefault();
+      }
       if (e.touches.length === 2) {
         stateRef.current.multiTouchLock = true;
         stateRef.current.twoFingerActive = true;
@@ -417,30 +432,39 @@ export function MRTestViewer() {
         stateRef.current.pinchStartScale = stateRef.current.modelScale;
         stateRef.current.pinchStartAngle = Math.atan2(dy, dx);
         stateRef.current.pinchStartYaw = stateRef.current.modelYaw;
-      } else if (e.touches.length === 3) {
-        stateRef.current.multiTouchLock = true;
-        stateRef.current.threeFingerActive = true;
-        stateRef.current.twoFingerActive = false;
-        stateRef.current.isDragging = false;
-        stateRef.current.movedDuringTap = true;
-        const avgY =
-          (e.touches[0].clientY + e.touches[1].clientY + e.touches[2].clientY) / 3;
-        stateRef.current.threeFingerStartY = avgY;
-        stateRef.current.threeFingerStartHeight = stateRef.current.targetHeightOffset;
+      } else if (e.touches.length >= 3) {
+        startThreeFingerElevation(e.touches);
       }
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 3 && stateRef.current.threeFingerActive) {
+      if (e.touches.length >= 3) {
         e.preventDefault();
+        if (!stateRef.current.threeFingerActive) {
+          startThreeFingerElevation(e.touches);
+          return;
+        }
         const avgY =
           (e.touches[0].clientY + e.touches[1].clientY + e.touches[2].clientY) / 3;
-        const deltaY = stateRef.current.threeFingerStartY - avgY;
-        stateRef.current.targetHeightOffset = THREE.MathUtils.clamp(
-          stateRef.current.threeFingerStartHeight + deltaY * 0.0045,
-          -2.5,
-          2.5
+        const deltaPx = stateRef.current.threeFingerStartY - avgY;
+
+        // Scale vertical speed proportionally to distance from camera so 3-finger movement tracks 1:1 on screen
+        const rect = container.getBoundingClientRect();
+        const distToModel = sceneCamera
+          ? Math.max(0.8, sceneCamera.position.distanceTo(stateRef.current.currentPos))
+          : 2.2;
+        const worldHeightAtDepth =
+          2 * distToModel * Math.tan(THREE.MathUtils.degToRad(32));
+        const unitsPerPx = worldHeightAtDepth / Math.max(300, rect.height);
+
+        const nextHeight = THREE.MathUtils.clamp(
+          stateRef.current.threeFingerStartHeight + deltaPx * unitsPerPx * 1.15,
+          -5.0,
+          5.0
         );
+        stateRef.current.targetHeightOffset = nextHeight;
+        const sign = nextHeight >= 0 ? '+' : '';
+        setElevationLabel(`Elevation ${sign}${nextHeight.toFixed(2)}m`);
         return;
       }
 
@@ -467,7 +491,12 @@ export function MRTestViewer() {
     };
 
     const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length < 3) stateRef.current.threeFingerActive = false;
+      if (e.touches.length < 3) {
+        if (stateRef.current.threeFingerActive) {
+          setElevationLabel(null);
+        }
+        stateRef.current.threeFingerActive = false;
+      }
       if (e.touches.length < 2) stateRef.current.twoFingerActive = false;
       if (e.touches.length === 0) stateRef.current.multiTouchLock = false;
     };
@@ -475,7 +504,7 @@ export function MRTestViewer() {
     container.addEventListener('pointerdown', onPointerDown);
     container.addEventListener('pointermove', onPointerMove);
     container.addEventListener('pointerup', onPointerUp);
-    container.addEventListener('touchstart', onTouchStart, { passive: true });
+    container.addEventListener('touchstart', onTouchStart, { passive: false });
     container.addEventListener('touchmove', onTouchMove, { passive: false });
     container.addEventListener('touchend', onTouchEnd, { passive: true });
     container.addEventListener('touchcancel', onTouchEnd, { passive: true });
@@ -724,6 +753,8 @@ export function MRTestViewer() {
                 state.targetPos
               );
               if (hit) {
+                state.baseSurfaceY = state.targetPos.y;
+                state.targetPos.y = state.baseSurfaceY + state.heightOffset;
                 if (!state.hasValidHit) {
                   state.currentPos.copy(state.targetPos);
                   state.hasValidHit = true;
@@ -749,10 +780,17 @@ export function MRTestViewer() {
 
             if (shadowPlane && dirLight) {
               shadowPlane.visible = state.isPlaced;
+              // Keep shadow anchored on the ground surface so lifting the object with 3 fingers visibly elevates it above its floor shadow
               shadowPlane.position.set(
                 state.currentPos.x,
-                state.currentPos.y + 0.002,
+                state.baseSurfaceY + 0.002,
                 state.currentPos.z
+              );
+              const shadowMat = shadowPlane.material as THREE.ShadowMaterial;
+              shadowMat.opacity = THREE.MathUtils.clamp(
+                0.36 - Math.abs(state.heightOffset) * 0.07,
+                0.12,
+                0.36
               );
               // Keep directional shadow frustum centered on the placed cabinet
               dirLight.position.set(
@@ -835,6 +873,7 @@ export function MRTestViewer() {
       <header
         className="absolute top-5 left-5 z-30 pointer-events-auto"
         onPointerDown={e => e.stopPropagation()}
+        onTouchStart={e => e.stopPropagation()}
       >
         <Link
           href="/ARs"
@@ -852,6 +891,13 @@ export function MRTestViewer() {
       {engineReady && !isPlaced && !modelLoading && !errorMessage && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-4 py-2 rounded-full bg-black/55 backdrop-blur-md border border-amber-400/35 text-amber-200 text-xs font-medium text-center whitespace-nowrap shadow-lg">
           Aim circle at floor • Tap screen to place
+        </div>
+      )}
+
+      {/* Subtle Live Elevation Readout While Adjusting Height with 3 Fingers */}
+      {elevationLabel && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-4 py-1.5 rounded-full bg-black/65 backdrop-blur-md border border-amber-400/40 text-amber-200 text-xs font-semibold text-center whitespace-nowrap shadow-lg">
+          {elevationLabel}
         </div>
       )}
 
@@ -890,6 +936,7 @@ export function MRTestViewer() {
           type="button"
           onClick={toggleAnimation}
           onPointerDown={e => e.stopPropagation()}
+          onTouchStart={e => e.stopPropagation()}
           aria-label={animPlaying ? 'Pause animation' : 'Play animation'}
           className="absolute bottom-7 left-6 z-30 w-12 h-12 rounded-full bg-black/55 hover:bg-black/75 border border-white/20 backdrop-blur-md text-white flex items-center justify-center shadow-2xl active:scale-95 transition-all cursor-pointer"
         >
