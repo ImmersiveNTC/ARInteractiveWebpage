@@ -48,9 +48,24 @@ function matchBaseWithSuffix(filename: string, suffix: AssetSuffix): string | nu
   return base.slice(0, -suffix.length);
 }
 
-/** Convert a stripped asset base name into a clean lowercase kebab-case URL slug. */
+/** Split "Asset Name - Author Name" into the asset name and optional author attribution. */
+function splitAuthorAttribution(baseName: string): { assetName: string; authorName: string | null } {
+  const parts = baseName.split(/\s+-\s+/);
+  if (parts.length < 2) {
+    return { assetName: baseName, authorName: null };
+  }
+  const assetName = parts[0].trim();
+  const authorName = parts.slice(1).join(' - ').trim();
+  return {
+    assetName: assetName || baseName,
+    authorName: authorName || null,
+  };
+}
+
+/** Convert a stripped asset base name (excluding optional " - Author") into a clean lowercase kebab-case URL slug. */
 function toSlug(baseName: string): string {
-  const slug = baseName
+  const { assetName } = splitAuthorAttribution(baseName);
+  const slug = assetName
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -59,21 +74,25 @@ function toSlug(baseName: string): string {
 }
 
 function toTitleCaseDisplayName(baseName: string, extraStripPattern?: RegExp): string {
-  let name = baseName.replace(/_/g, ' ');
+  const { assetName, authorName } = splitAuthorAttribution(baseName);
+  let name = assetName.replace(/_/g, ' ');
   if (extraStripPattern) {
     name = name.replace(extraStripPattern, '');
   }
   name = name.replace(/\s{2,}/g, ' ').trim();
-  if (!name) return baseName;
-  return name
-    .split(' ')
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
+  const formattedAsset = name
+    ? name
+        .split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ')
+    : assetName;
+  return authorName ? `${formattedAsset} - ${authorName}` : formattedAsset;
 }
 
 function toARDisplayName(baseName: string): string {
-  const cleaned = baseName.replace(/_/g, ' ').replace(/\s{2,}/g, ' ').trim();
-  return cleaned || baseName;
+  const { assetName, authorName } = splitAuthorAttribution(baseName);
+  const cleanedAsset = assetName.replace(/_/g, ' ').replace(/\s{2,}/g, ' ').trim() || assetName;
+  return authorName ? `${cleanedAsset} - ${authorName}` : cleanedAsset;
 }
 
 function toModelCategory(filename: string): string {
