@@ -23,7 +23,7 @@ export function ThreeDGalleryView({
   return (
     <div className="app-page min-h-dvh text-white font-sans flex flex-col">
       <GalleryNav activePage={activePage} />
-      <main className="mx-auto w-full max-w-7xl px-6 pt-8 pb-16 md:pt-12 md:pb-24 flex-1">
+      <main className="gallery-container px-6 pt-8 pb-16 md:pt-12 md:pb-24 flex-1">
         <header className="mb-8 md:mb-12">
           <h1 className="i3d-header__title">{title}</h1>
           <p className="i3d-header__sub">{subtitle}</p>

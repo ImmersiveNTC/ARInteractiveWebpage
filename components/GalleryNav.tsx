@@ -84,7 +84,7 @@ export function GalleryNav({ activePage }: GalleryNavProps) {
   }, [activePage]);
 
   return (
-    <nav className="w-full max-w-7xl mx-auto px-6 pt-10 md:pt-8 flex flex-col lg:flex-row items-center justify-between gap-4 border-b border-white/5 pb-6">
+    <nav className="gallery-container px-6 pt-10 md:pt-8 flex flex-col lg:flex-row items-center justify-between gap-4 border-b border-white/5 pb-6">
       <Link
         href="/"
         className="flex items-center gap-2 text-white/60 hover:text-white transition-colors group text-sm font-medium shrink-0"

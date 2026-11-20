@@ -60,10 +60,10 @@ function CategoryIcon({
   if (kind === '3d') {
     return (
       <div
-        className="w-11 h-11 flex items-center justify-center shrink-0"
+        className="w-14 h-14 flex items-center justify-center shrink-0"
         style={{ ['--i3d-accent' as string]: accentColor }}
       >
-        <div className="i3d-cube-wrap" style={{ transform: 'scale(0.68)' }}>
+        <div className="i3d-cube-wrap mb-0!" style={{ transform: 'scale(0.95)' }}>
           <div className="i3d-cube">
             <div className="i3d-cube__face i3d-cube__face--front" />
             <div className="i3d-cube__face i3d-cube__face--back" />
@@ -79,8 +79,8 @@ function CategoryIcon({
 
   if (kind === 'ar') {
     return (
-      <div className="w-11 h-11 flex items-center justify-center relative shrink-0">
-        <div className="iosar-target" aria-hidden="true" style={{ transform: 'scale(0.68)' }}>
+      <div className="w-14 h-14 flex items-center justify-center relative shrink-0">
+        <div className="iosar-target" aria-hidden="true" style={{ transform: 'scale(0.88)' }}>
           <div className="iosar-target__ring iosar-target__ring--outer" style={{ borderColor: accentColor }} />
           <div className="iosar-target__ring iosar-target__ring--inner" style={{ borderColor: accentColor }} />
           <div className="iosar-target__corners">
@@ -95,8 +95,8 @@ function CategoryIcon({
   }
 
   return (
-    <div className="w-11 h-11 flex items-center justify-center relative shrink-0">
-      <div className="ar360-sphere-wrap" aria-hidden="true" style={{ transform: 'scale(0.68)' }}>
+    <div className="w-14 h-14 flex items-center justify-center relative shrink-0">
+      <div className="ar360-sphere-wrap" aria-hidden="true" style={{ transform: 'scale(0.88)' }}>
         <div className="ar360-sphere" style={{ ['--ar360-accent' as string]: accentColor }} />
         <div className="ar360-sphere__orbit" style={{ borderColor: accentColor }} />
         <div className="ar360-sphere__orbit ar360-sphere__orbit--vertical" style={{ borderColor: accentColor }} />
@@ -131,18 +131,18 @@ export default function Home() {
       </header>
 
       {/* 3 Category Rows: [ Left Button ] — [ Center Icon + Category Title ] — [ Right Button ] */}
-      <div className="flex flex-col gap-3.5 w-full max-w-3xl mb-6 relative z-10">
+      <div className="flex flex-col gap-3 w-full max-w-3xl mb-6 relative z-10">
         {CATEGORY_ROWS.map(row => (
           <section
             key={row.id}
             aria-label={row.title}
-            className={`relative overflow-hidden rounded-3xl border bg-gradient-to-r bg-white/[0.04] backdrop-blur-md px-4 py-3.5 sm:px-5 sm:py-4 shadow-xl ${row.rowTintClass}`}
+            className={`relative overflow-hidden rounded-3xl border bg-gradient-to-r bg-white/[0.04] backdrop-blur-md px-4 py-2.5 sm:px-5 sm:py-3 shadow-xl ${row.rowTintClass}`}
           >
-            <div className="grid grid-cols-2 sm:grid-cols-[1fr_minmax(190px,auto)_1fr] items-center gap-2.5 sm:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-[1fr_minmax(220px,auto)_1fr] items-center gap-2.5 sm:gap-4">
               {/* Center Category Title + Animated Icon (top on mobile, middle on sm+) */}
-              <div className="col-span-2 sm:col-span-1 sm:order-2 flex items-center justify-center gap-2.5">
+              <div className="col-span-2 sm:col-span-1 sm:order-2 flex items-center justify-center gap-3">
                 <CategoryIcon kind={row.kind} accentColor={row.accentColor} />
-                <h2 className="text-lg md:text-xl font-bold text-white tracking-tight whitespace-nowrap">
+                <h2 className="text-xl md:text-2xl font-bold text-white tracking-tight whitespace-nowrap">
                   {row.title}
                 </h2>
               </div>
@@ -150,7 +150,7 @@ export default function Home() {
               {/* Left Action Button */}
               <Link
                 href={row.left.href}
-                className={`sm:order-1 flex items-center justify-center py-2.5 px-4 rounded-2xl border border-white/10 bg-white/[0.06] text-sm font-semibold text-white/85 transition-all duration-200 hover:-translate-y-0.5 ${row.buttonHoverClass}`}
+                className={`sm:order-1 flex items-center justify-center py-3 px-5 rounded-2xl border border-white/10 bg-white/[0.06] text-base font-semibold text-white/90 transition-all duration-200 hover:-translate-y-0.5 ${row.buttonHoverClass}`}
               >
                 {row.left.label}
               </Link>
@@ -158,7 +158,7 @@ export default function Home() {
               {/* Right Action Button */}
               <Link
                 href={row.right.href}
-                className={`sm:order-3 flex items-center justify-center py-2.5 px-4 rounded-2xl border border-white/10 bg-white/[0.06] text-sm font-semibold text-white/85 transition-all duration-200 hover:-translate-y-0.5 ${row.buttonHoverClass}`}
+                className={`sm:order-3 flex items-center justify-center py-3 px-5 rounded-2xl border border-white/10 bg-white/[0.06] text-base font-semibold text-white/90 transition-all duration-200 hover:-translate-y-0.5 ${row.buttonHoverClass}`}
               >
                 {row.right.label}
               </Link>

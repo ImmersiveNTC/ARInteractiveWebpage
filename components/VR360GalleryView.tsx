@@ -94,7 +94,7 @@ export function VR360GalleryView({
     <div className="app-page min-h-dvh text-white font-sans flex flex-col">
       <GalleryNav activePage={activePage} />
 
-      <main className="mx-auto w-full max-w-7xl px-6 pt-8 pb-16 md:pt-12 md:pb-24 flex-1">
+      <main className="gallery-container px-6 pt-8 pb-16 md:pt-12 md:pb-24 flex-1">
         <header className="mb-8 md:mb-12">
           <div className="ar360-header__eyebrow">
             <span className="ar360-header__eyebrow-dot" />
