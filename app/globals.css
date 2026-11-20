@@ -749,9 +749,15 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   gap: 14px;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 560px) {
   .i3d-gallery {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (min-width: 768px) {
+  .i3d-gallery {
     gap: 20px;
   }
 }
@@ -1001,7 +1007,7 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   }
 
   .i3d-card__name {
-    font-size: 17px;
+    font-size: 16px;
   }
 
   .i3d-card__category {
@@ -1117,9 +1123,15 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   gap: 14px;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 560px) {
   .iosar-gallery {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (min-width: 768px) {
+  .iosar-gallery {
     gap: 20px;
   }
 }
@@ -1622,7 +1634,7 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   }
 }
 
-/* Phone responsiveness: single compact card per row */
+/* Compact card sizing for mobile & small viewports */
 @media (max-width: 767px) {
   .iosar-card {
     height: 180px;
@@ -1630,7 +1642,7 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   }
 
   .iosar-card__body {
-    padding: 18px 20px;
+    padding: 16px 18px 20px;
   }
 
   .iosar-card .iosar-target {
@@ -1640,7 +1652,7 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   }
 
   .iosar-card__name {
-    font-size: 17px;
+    font-size: 16px;
     margin-top: 10px;
     line-height: 1.25;
   }
@@ -1740,9 +1752,15 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   gap: 14px;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 560px) {
   .ar360-gallery {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (min-width: 768px) {
+  .ar360-gallery {
     gap: 20px;
   }
 }
@@ -2199,7 +2217,7 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
 
   .ar360-card__body {
     height: 40%;
-    padding: 6px 14px 8px;
+    padding: 6px 12px 8px;
     gap: 10px;
   }
 
@@ -2210,7 +2228,7 @@ h1, h2, h3, h4, h5, h6, .app-tilt__text, .app-block-card__title, .app-card__titl
   }
 
   .ar360-card__name {
-    font-size: 16px;
+    font-size: 15px;
     margin-top: 0;
     line-height: 1.2;
   }
