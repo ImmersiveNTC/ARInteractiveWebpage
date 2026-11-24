@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AssetItem } from '../lib/assetTypes';
-import { useIsMobileEdgeOrFirefox } from '../lib/browserDetect';
+import { useEmbedContext, useIsMobileEdgeOrFirefox } from '../lib/browserDetect';
 import { GalleryNav, GalleryPageKey } from './GalleryNav';
 
 type ARGalleryViewProps = {
@@ -57,7 +57,9 @@ export function ARGalleryView({
   const router = useRouter();
   const isIOS = useIsIOS();
   const useGlbAR = useIsMobileEdgeOrFirefox();
+  const embedContext = useEmbedContext();
   const isGlbGallery = baseRoute === '/ARglb';
+  const openGlbInNewTab = isGlbGallery && embedContext === 'iframe';
   const shouldRedirectToGlb = !isGlbGallery && useGlbAR;
 
   useEffect(() => {
@@ -133,6 +135,8 @@ export function ARGalleryView({
                 key={model.id}
                 id={model.id}
                 href={`${baseRoute}/${model.slug}`}
+                target={openGlbInNewTab ? '_blank' : undefined}
+                rel={openGlbInNewTab ? 'noopener noreferrer' : undefined}
                 className="iosar-card"
                 style={{
                   animationDelay: `${model.index * 110 + 60}ms`,

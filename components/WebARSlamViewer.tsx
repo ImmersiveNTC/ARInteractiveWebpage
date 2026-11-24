@@ -6,10 +6,15 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BASE_PATH } from '../lib/assetTypes';
+import { useEmbedContext } from '../lib/browserDetect';
+
+const emptySubscribe = () => () => {};
+const getPageUrlSnapshot = () => (typeof window !== 'undefined' ? window.location.href : '');
+const getServerPageUrl = () => '';
 
 export type WebARSlamViewerProps = {
   glbUrl: string;
@@ -171,6 +176,9 @@ export function WebARSlamViewer({
   backHref,
   backLabel,
 }: WebARSlamViewerProps) {
+  const embedContext = useEmbedContext();
+  const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
+  const [allowInlineStart, setAllowInlineStart] = useState(false);
   const [isPlaced, setIsPlaced] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
   const [modelLoading, setModelLoading] = useState(true);
@@ -179,6 +187,12 @@ export function WebARSlamViewer({
   const [elevationLabel, setElevationLabel] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
+
+  // Auto-launch 8th Wall SLAM immediately when visited directly in a top-level tab.
+  // When embedded inline inside an iframe (e.g. Articulate Rise), defer until user opts in
+  // or launches full-screen AR in a new browser tab where camera & motion sensors are permitted.
+  const shouldRunSlam =
+    embedContext === 'top' || (embedContext === 'iframe' && allowInlineStart);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -238,6 +252,7 @@ export function WebARSlamViewer({
   };
 
   useEffect(() => {
+    if (!shouldRunSlam) return;
     const container = containerRef.current;
     const canvas = canvasRef.current;
     if (!container || !canvas) return;
@@ -947,7 +962,78 @@ export function WebARSlamViewer({
       container.removeEventListener('touchcancel', onTouchEnd);
       stopXR8();
     };
-  }, [displayName, glbUrl, retryTick, stopXR8]);
+  }, [displayName, glbUrl, retryTick, shouldRunSlam, stopXR8]);
+
+  if (embedContext === 'loading') {
+    return (
+      <div className="fixed inset-0 w-full h-dvh bg-black text-white font-sans flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full border-4 border-white/15 border-t-amber-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (embedContext === 'iframe' && !allowInlineStart) {
+    return (
+      <div className="app-page min-h-dvh w-full text-white font-sans flex flex-col items-center justify-center p-5">
+        <div className="w-full max-w-sm rounded-3xl border border-amber-500/20 bg-white/5 backdrop-blur-md p-6 text-center shadow-2xl">
+          <div className="mx-auto mb-4 flex items-center justify-center">
+            <div className="iosar-target" aria-hidden="true">
+              <div
+                className="iosar-target__ring iosar-target__ring--outer"
+                style={{ borderColor: 'rgba(245, 158, 11, 0.9)' }}
+              />
+              <div
+                className="iosar-target__ring iosar-target__ring--inner"
+                style={{ borderColor: 'rgba(245, 158, 11, 0.9)' }}
+              />
+              <div className="iosar-target__corners">
+                {[0, 1, 2, 3].map(i => (
+                  <div
+                    key={i}
+                    className={`iosar-target__corner iosar-target__corner--${i}`}
+                    style={{ borderColor: 'rgba(245, 158, 11, 0.9)' }}
+                  />
+                ))}
+              </div>
+              <div
+                className="iosar-target__dot"
+                style={{ backgroundColor: 'rgba(245, 158, 11, 0.9)' }}
+              />
+            </div>
+          </div>
+
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-400/85 mb-1.5">
+            AR Experience
+          </p>
+          <h1 className="text-xl font-bold text-white mb-2">{displayName}</h1>
+          <p className="text-xs text-white/60 mb-5 leading-relaxed">
+            Opens full-screen 6DoF AR in a new browser tab so your camera and motion sensors can run smoothly.
+          </p>
+
+          <a
+            href={pageUrl || '#'}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-black font-semibold text-sm transition-all shadow-lg"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
+            </svg>
+            Launch AR Experience
+          </a>
+
+          <button
+            type="button"
+            onClick={() => setAllowInlineStart(true)}
+            className="mt-3.5 inline-block text-xs text-white/45 hover:text-amber-300 underline underline-offset-4 transition-colors cursor-pointer"
+          >
+            Or try inline AR here
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1011,10 +1097,24 @@ export function WebARSlamViewer({
         >
           <div className="w-full max-w-sm rounded-3xl border border-white/15 bg-white/10 p-6 text-center shadow-2xl">
             <p className="text-sm text-white/90 mb-5">{errorMessage}</p>
+            {embedContext === 'iframe' && pageUrl && (
+              <a
+                href={pageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 w-full py-3 px-5 mb-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors"
+              >
+                Open AR in New Tab
+              </a>
+            )}
             <button
               type="button"
               onClick={() => setRetryTick(t => t + 1)}
-              className="w-full py-3 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors cursor-pointer"
+              className={`w-full py-3 px-5 rounded-2xl font-semibold text-sm transition-colors cursor-pointer ${
+                embedContext === 'iframe'
+                  ? 'bg-white/10 hover:bg-white/20 border border-white/15 text-white'
+                  : 'bg-amber-500 hover:bg-amber-400 text-black'
+              }`}
             >
               Retry AR Camera
             </button>

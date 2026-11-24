@@ -4,6 +4,8 @@ import { useSyncExternalStore } from 'react';
 
 const emptySubscribe = () => () => {};
 
+export type EmbedContext = 'loading' | 'iframe' | 'top';
+
 /**
  * Returns true when running in Microsoft Edge or Mozilla Firefox on a mobile/tablet device
  * (iPhone, iPad, or Android). Returns false for Chrome, Safari, and all desktop browsers.
@@ -30,11 +32,51 @@ export function isMobileEdgeOrFirefox(): boolean {
   return isEdge || isFirefox;
 }
 
-function getServerSnapshot(): boolean {
+function getMobileEdgeFirefoxServerSnapshot(): boolean {
   return false;
 }
 
 /** SSR-safe hook that returns true on mobile Edge or mobile Firefox. */
 export function useIsMobileEdgeOrFirefox(): boolean {
-  return useSyncExternalStore(emptySubscribe, isMobileEdgeOrFirefox, getServerSnapshot);
+  return useSyncExternalStore(
+    emptySubscribe,
+    isMobileEdgeOrFirefox,
+    getMobileEdgeFirefoxServerSnapshot
+  );
+}
+
+/**
+ * Returns true when the current document is embedded inline inside an <iframe>
+ * (e.g., Articulate Rise / LMS embed blocks) rather than opened as a top-level browser tab.
+ */
+export function isEmbeddedInIframe(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  try {
+    return window.self !== window.top;
+  } catch {
+    // Cross-origin access to window.top threw SecurityError — definitely inside an iframe.
+    return true;
+  }
+}
+
+function getEmbedContextSnapshot(): EmbedContext {
+  return isEmbeddedInIframe() ? 'iframe' : 'top';
+}
+
+function getEmbedContextServerSnapshot(): EmbedContext {
+  return 'loading';
+}
+
+/**
+ * SSR-safe hook reporting whether the page is visited inline inside an iframe ('iframe')
+ * or directly in a top-level browser tab ('top'). Returns 'loading' during static prerender.
+ */
+export function useEmbedContext(): EmbedContext {
+  return useSyncExternalStore(
+    emptySubscribe,
+    getEmbedContextSnapshot,
+    getEmbedContextServerSnapshot
+  );
 }
