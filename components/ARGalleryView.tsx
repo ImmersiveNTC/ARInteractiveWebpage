@@ -1,16 +1,18 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AssetItem } from '../lib/assetTypes';
+import { useIsMobileEdgeOrFirefox } from '../lib/browserDetect';
 import { GalleryNav, GalleryPageKey } from './GalleryNav';
 
 type ARGalleryViewProps = {
   activePage: GalleryPageKey;
   title: string;
   subtitle: string;
-  baseRoute: '/ARs' | '/ARi';
-  suffixHint: '-ARs' | '-ARi';
+  baseRoute: '/ARs' | '/ARi' | '/ARglb';
+  suffixHint?: '-ARs' | '-ARi';
   models: AssetItem[];
 };
 
@@ -43,7 +45,7 @@ function ARTargetIcon({ accentColor }: { accentColor: string }) {
   );
 }
 
-/** Shared gallery view for Static AR (/ARs) and Interactive AR (/ARi). */
+/** Shared gallery view for Static AR (/ARs), Interactive AR (/ARi), and WebAR GLB (/ARglb). */
 export function ARGalleryView({
   activePage,
   title,
@@ -52,7 +54,11 @@ export function ARGalleryView({
   suffixHint,
   models,
 }: ARGalleryViewProps) {
+  const router = useRouter();
   const isIOS = useIsIOS();
+  const useGlbAR = useIsMobileEdgeOrFirefox();
+  const isGlbGallery = baseRoute === '/ARglb';
+  const shouldRedirectToGlb = !isGlbGallery && useGlbAR;
 
   useEffect(() => {
     try {
@@ -62,6 +68,23 @@ export function ARGalleryView({
     }
   }, []);
 
+  useEffect(() => {
+    if (shouldRedirectToGlb) {
+      router.replace('/ARglb');
+    }
+  }, [router, shouldRedirectToGlb]);
+
+  if (shouldRedirectToGlb) {
+    return (
+      <div className="app-page min-h-dvh text-white font-sans flex flex-col">
+        <GalleryNav activePage="ARglb" />
+        <main className="flex-1 flex items-center justify-center p-6">
+          <div className="w-10 h-10 rounded-full border-4 border-white/10 border-t-amber-400 animate-spin" />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app-page min-h-dvh text-white font-sans flex flex-col">
       <GalleryNav activePage={activePage} />
@@ -69,14 +92,23 @@ export function ARGalleryView({
         <header className="mb-8 md:mb-12">
           <div className="iosar-header__eyebrow">
             <span className="iosar-header__eyebrow-dot" />
-            iPhone AR Experience
+            {isGlbGallery ? 'AR Experience' : 'iPhone AR Experience'}
           </div>
           <h1 className="iosar-header__title">{title}</h1>
           <p className="iosar-header__sub">{subtitle}</p>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className={`iosar-device-banner ${isIOS ? 'iosar-device-banner--ios' : 'iosar-device-banner--desktop'}`}>
-              {isIOS ? (
+            <div
+              className={`iosar-device-banner ${
+                isGlbGallery || isIOS ? 'iosar-device-banner--ios' : 'iosar-device-banner--desktop'
+              }`}
+            >
+              {isGlbGallery ? (
+                <>
+                  <span className="iosar-device-banner__dot" />
+                  <span>Tap any model card to launch the in-browser AR camera experience</span>
+                </>
+              ) : isIOS ? (
                 <>
                   <span className="iosar-device-banner__dot" />
                   <span>iPhone detected — tap any model card to open its AR page</span>
@@ -91,17 +123,6 @@ export function ARGalleryView({
                 </>
               )}
             </div>
-
-            <Link
-              href="/MRTest"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 text-xs font-semibold transition-colors"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                <circle cx="12" cy="13" r="4" />
-              </svg>
-              Open Edge MR Test (GLB)
-            </Link>
           </div>
         </header>
 
@@ -139,7 +160,7 @@ export function ARGalleryView({
                 </div>
 
                 <div className="iosar-card__cta">
-                  {isIOS ? (
+                  {isGlbGallery || isIOS ? (
                     <>
                       <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
@@ -165,8 +186,17 @@ export function ARGalleryView({
             <div className="text-5xl mb-6">📦</div>
             <h2 className="text-2xl font-medium text-white/70">No AR Models Found</h2>
             <p className="mt-4 text-white/40 max-w-md">
-              Add <code className="text-amber-400/70">{suffixHint}</code> .usdz or .reality files to the{' '}
-              <code className="text-amber-400/70">public/ARassets</code> directory.
+              {isGlbGallery ? (
+                <>
+                  Add <code className="text-amber-400/70">.glb</code> files to the{' '}
+                  <code className="text-amber-400/70">public/ARassets</code> directory.
+                </>
+              ) : (
+                <>
+                  Add <code className="text-amber-400/70">{suffixHint}</code> .usdz or .reality files to the{' '}
+                  <code className="text-amber-400/70">public/ARassets</code> directory.
+                </>
+              )}
             </p>
           </div>
         )}
@@ -175,7 +205,9 @@ export function ARGalleryView({
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
-          AR Quick Look requires iOS 12+ with Safari or Chrome (supports .usdz and .reality). On Edge iOS, the file downloads directly for Quick Look.
+          {isGlbGallery
+            ? 'In-browser AR works directly inside Edge, Firefox, Safari, and Chrome — tap to place, drag to move, pinch & twist to scale/rotate, or swipe with 3 fingers to adjust height.'
+            : 'AR Quick Look requires iOS 12+ with Safari or Chrome (supports .usdz and .reality).'}
         </div>
       </main>
     </div>

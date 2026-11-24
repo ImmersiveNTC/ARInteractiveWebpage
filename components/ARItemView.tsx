@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { QRCode } from 'react-qrcode-logo';
 import { AssetItem, BASE_PATH } from '../lib/assetTypes';
+import { useIsMobileEdgeOrFirefox } from '../lib/browserDetect';
 import { I3DStandaloneViewer } from './I3DStandaloneViewer';
 
 type BrowserMode = 'loading' | 'ios-safari-chrome' | 'ios-download' | 'desktop';
@@ -124,6 +126,8 @@ type ARItemViewProps = {
 
 /** Standalone shareable page for an individual AR asset. */
 export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemViewProps) {
+  const router = useRouter();
+  const useGlbAR = useIsMobileEdgeOrFirefox();
   const fileExtLabel = (item.fileName.split('.').pop() || 'USDZ').toUpperCase();
   const browserMode = useSyncExternalStore(emptySubscribe, getBrowserModeSnapshot, getServerBrowserMode);
   const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
@@ -260,7 +264,13 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
   }, [stopOpening]);
 
   useEffect(() => {
-    if (autoTriggeredRef.current) return;
+    if (useGlbAR) {
+      router.replace('/ARglb');
+    }
+  }, [router, useGlbAR]);
+
+  useEffect(() => {
+    if (useGlbAR || autoTriggeredRef.current) return;
 
     if (browserMode === 'ios-safari-chrome') {
       autoTriggeredRef.current = true;
@@ -305,7 +315,7 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
       }, 120);
       return () => clearTimeout(timer);
     }
-  }, [browserMode, item.fileUrl, launchInSafariOrFallback, launchQuickLook]);
+  }, [browserMode, item.fileUrl, launchInSafariOrFallback, launchQuickLook, useGlbAR]);
 
   // One continuous bar: download fills 0–DOWNLOAD_SHARE%, Quick Look opening fills the rest.
   const showBar = openProgress !== null || loadState === 'loading';
@@ -323,6 +333,16 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
       // Ignore storage errors.
     }
   };
+
+  if (useGlbAR) {
+    return (
+      <div className="app-page min-h-dvh text-white font-sans flex flex-col">
+        <main className="flex-1 flex items-center justify-center p-6">
+          <div className="w-10 h-10 rounded-full border-4 border-white/10 border-t-amber-400 animate-spin" />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app-page min-h-dvh text-white font-sans flex flex-col">
@@ -467,15 +487,6 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
                 ? 'Downloaded — Tap to download again'
                 : 'Or download AR file for iPhone Files app'}
             </button>
-
-            <div className="mt-5 pt-5 border-t border-white/10">
-              <Link
-                href="/MRTest"
-                className="inline-flex items-center justify-center gap-2 w-full py-3 px-5 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 font-semibold text-xs transition-colors"
-              >
-                Open Edge Mixed Reality Test (GLB)
-              </Link>
-            </div>
           </div>
         </main>
       )}

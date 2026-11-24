@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useEffect } from 'react';
+import { useIsMobileEdgeOrFirefox } from '../lib/browserDetect';
 
 export type GalleryPageKey =
   | '3Ds'
   | '3Di'
   | 'ARs'
   | 'ARi'
+  | 'ARglb'
   | '360Image'
   | '360Video';
 
@@ -68,6 +70,8 @@ const NAV_TABS: NavTab[] = [
 ];
 
 export function GalleryNav({ activePage }: GalleryNavProps) {
+  const useGlbAR = useIsMobileEdgeOrFirefox();
+
   useEffect(() => {
     const resetScroll = () => {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
@@ -106,19 +110,26 @@ export function GalleryNav({ activePage }: GalleryNavProps) {
       </Link>
 
       <div className="flex flex-wrap items-center justify-center gap-1.5 p-1.5 bg-white/5 rounded-2xl lg:rounded-full border border-white/10 backdrop-blur-md">
-        {NAV_TABS.map(tab => (
-          <Link
-            key={tab.key}
-            href={tab.href}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all duration-300 ${
-              activePage === tab.key
-                ? tab.activeClass
-                : 'text-white/50 border border-transparent hover:text-white hover:bg-white/5'
-            }`}
-          >
-            {tab.label}
-          </Link>
-        ))}
+        {NAV_TABS.map(tab => {
+          const isArTab = tab.key === 'ARs' || tab.key === 'ARi';
+          const tabHref = useGlbAR && isArTab ? '/ARglb' : tab.href;
+          const isActive =
+            activePage === tab.key || (activePage === 'ARglb' && useGlbAR && isArTab);
+
+          return (
+            <Link
+              key={tab.key}
+              href={tabHref}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all duration-300 ${
+                isActive
+                  ? tab.activeClass
+                  : 'text-white/50 border border-transparent hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
       </div>
     </nav>
   );

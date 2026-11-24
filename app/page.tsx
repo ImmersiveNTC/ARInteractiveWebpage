@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { useIsMobileEdgeOrFirefox } from '../lib/browserDetect';
 
 type CategoryRowConfig = {
   id: string;
@@ -108,6 +109,7 @@ function CategoryIcon({
 export default function Home() {
   const [qrEnlarged, setQrEnlarged] = useState(false);
   const [copied, setCopied] = useState(false);
+  const useGlbAR = useIsMobileEdgeOrFirefox();
   const pageUrl = 'https://immersiventc.github.io/ARInteractiveWebpage/';
 
   const handleCopy = (e: React.MouseEvent) => {
@@ -149,7 +151,7 @@ export default function Home() {
 
               {/* Left Action Button */}
               <Link
-                href={row.left.href}
+                href={row.kind === 'ar' && useGlbAR ? '/ARglb' : row.left.href}
                 className={`sm:order-1 flex items-center justify-center py-3 px-5 rounded-2xl border border-white/10 bg-white/[0.06] text-base font-semibold text-white/90 transition-all duration-200 hover:-translate-y-0.5 ${row.buttonHoverClass}`}
               >
                 {row.left.label}
@@ -157,7 +159,7 @@ export default function Home() {
 
               {/* Right Action Button */}
               <Link
-                href={row.right.href}
+                href={row.kind === 'ar' && useGlbAR ? '/ARglb' : row.right.href}
                 className={`sm:order-3 flex items-center justify-center py-3 px-5 rounded-2xl border border-white/10 bg-white/[0.06] text-base font-semibold text-white/90 transition-all duration-200 hover:-translate-y-0.5 ${row.buttonHoverClass}`}
               >
                 {row.right.label}

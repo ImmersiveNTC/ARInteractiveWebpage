@@ -116,9 +116,22 @@ function to360Category(filename: string, isVideo: boolean): string {
   return '360° Panorama';
 }
 
+/** Strip any matching trailing suffix (case-insensitive) from filename base, or return the raw base. */
+function stripOptionalSuffixes(filename: string, suffixes: AssetSuffix[]): string {
+  const base = filename.replace(/\.[^/.]+$/, '');
+  const lowerBase = base.toLowerCase();
+  for (const suffix of suffixes) {
+    if (lowerBase.endsWith(suffix.toLowerCase())) {
+      return base.slice(0, -suffix.length);
+    }
+  }
+  return base;
+}
+
 type ReadAssetsConfig = {
   folder: '3Dassets' | 'ARassets' | '360assets';
-  suffix: AssetSuffix;
+  suffix?: AssetSuffix;
+  optionalSuffixes?: AssetSuffix[];
   validExtensions: string[];
   palette: string[];
   idPrefix: string;
@@ -151,7 +164,10 @@ function readFilteredAssets(config: ReadAssetsConfig): AssetItem[] {
       const getOrderIndex = (file: string) => {
         const lowerFile = file.toLowerCase();
         const lowerBase = lowerFile.replace(/\.[^/.]+$/, '');
-        const idx = orderList.findIndex(entry => entry === lowerFile || entry === lowerBase);
+        const idx = orderList.findIndex(entry => {
+          const entryBase = entry.replace(/\.[^/.]+$/, '');
+          return entry === lowerFile || entry === lowerBase || entryBase === lowerBase;
+        });
         return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
       };
 
@@ -161,6 +177,7 @@ function readFilteredAssets(config: ReadAssetsConfig): AssetItem[] {
           if (file.startsWith('.')) return false;
           const ext = path.extname(file).toLowerCase();
           if (!config.validExtensions.includes(ext)) return false;
+          if (!config.suffix) return true;
           return matchBaseWithSuffix(file, config.suffix) !== null;
         })
         .sort((a, b) => {
@@ -177,7 +194,9 @@ function readFilteredAssets(config: ReadAssetsConfig): AssetItem[] {
   const usedSlugs = new Map<string, number>();
 
   return files.map((file, idx) => {
-    const baseName = matchBaseWithSuffix(file, config.suffix) ?? file.replace(/\.[^/.]+$/, '');
+    const baseName = config.suffix
+      ? (matchBaseWithSuffix(file, config.suffix) ?? file.replace(/\.[^/.]+$/, ''))
+      : stripOptionalSuffixes(file, config.optionalSuffixes ?? []);
     const rawSlug = toSlug(baseName);
     const seen = usedSlugs.get(rawSlug) ?? 0;
     usedSlugs.set(rawSlug, seen + 1);
@@ -226,6 +245,19 @@ export function getARAssets(suffix: ARSuffix): AssetItem[] {
     validExtensions: ['.usdz', '.reality'],
     palette: AR_PALETTE,
     idPrefix: suffix === '-ARs' ? 'ars-asset' : 'ari-asset',
+    formatDisplayName: toARDisplayName,
+    getCategory: toModelCategory,
+  });
+}
+
+/** Read all WebAR .glb/.gltf assets from public/ARassets for the unified Edge/Firefox AR gallery (/ARglb). */
+export function getARGlbAssets(): AssetItem[] {
+  return readFilteredAssets({
+    folder: 'ARassets',
+    optionalSuffixes: ['-ARs', '-ARi'],
+    validExtensions: ['.glb', '.gltf'],
+    palette: AR_PALETTE,
+    idPrefix: 'arglb-asset',
     formatDisplayName: toARDisplayName,
     getCategory: toModelCategory,
   });
