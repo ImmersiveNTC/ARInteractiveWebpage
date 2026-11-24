@@ -80,3 +80,21 @@ export function useEmbedContext(): EmbedContext {
     getEmbedContextServerSnapshot
   );
 }
+
+/**
+ * In-memory flag indicating the user explicitly tapped a model card inside /ARglb
+ * (works even in cross-origin iframes where sessionStorage may be restricted).
+ */
+let inlineArNavigationPending = false;
+
+export function markInlineArNavigation(): void {
+  inlineArNavigationPending = true;
+}
+
+export function hasInlineArNavigation(): boolean {
+  return inlineArNavigationPending;
+}
+
+export function clearInlineArNavigation(): void {
+  inlineArNavigationPending = false;
+}

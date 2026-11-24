@@ -10,7 +10,11 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BASE_PATH } from '../lib/assetTypes';
-import { useEmbedContext } from '../lib/browserDetect';
+import {
+  clearInlineArNavigation,
+  hasInlineArNavigation,
+  useEmbedContext,
+} from '../lib/browserDetect';
 
 const emptySubscribe = () => () => {};
 const getPageUrlSnapshot = () => (typeof window !== 'undefined' ? window.location.href : '');
@@ -178,7 +182,9 @@ export function WebARSlamViewer({
 }: WebARSlamViewerProps) {
   const embedContext = useEmbedContext();
   const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
-  const [allowInlineStart, setAllowInlineStart] = useState(false);
+  // If user navigated here by tapping an asset card inside /ARglb, auto-start inline AR immediately.
+  // If embedded directly as a standalone Rise block, wait for a single tap so stacked blocks don't fight over the camera.
+  const [allowInlineStart, setAllowInlineStart] = useState<boolean>(() => hasInlineArNavigation());
   const [isPlaced, setIsPlaced] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
   const [modelLoading, setModelLoading] = useState(true);
@@ -188,9 +194,10 @@ export function WebARSlamViewer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
-  // Auto-launch 8th Wall SLAM immediately when visited directly in a top-level tab.
-  // When embedded inline inside an iframe (e.g. Articulate Rise), defer until user opts in
-  // or launches full-screen AR in a new browser tab where camera & motion sensors are permitted.
+  useEffect(() => {
+    clearInlineArNavigation();
+  }, []);
+
   const shouldRunSlam =
     embedContext === 'top' || (embedContext === 'iframe' && allowInlineStart);
 
@@ -1007,29 +1014,31 @@ export function WebARSlamViewer({
           </p>
           <h1 className="text-xl font-bold text-white mb-2">{displayName}</h1>
           <p className="text-xs text-white/60 mb-5 leading-relaxed">
-            Opens full-screen 6DoF AR in a new browser tab so your camera and motion sensors can run smoothly.
+            Tap below to start the AR camera right here.
           </p>
 
-          <a
-            href={pageUrl || '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-black font-semibold text-sm transition-all shadow-lg"
+          <button
+            type="button"
+            onClick={() => setAllowInlineStart(true)}
+            className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-black font-semibold text-sm transition-all shadow-lg cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
               <circle cx="12" cy="13" r="4" />
             </svg>
-            Launch AR Experience
-          </a>
-
-          <button
-            type="button"
-            onClick={() => setAllowInlineStart(true)}
-            className="mt-3.5 inline-block text-xs text-white/45 hover:text-amber-300 underline underline-offset-4 transition-colors cursor-pointer"
-          >
-            Or try inline AR here
+            Start AR Experience
           </button>
+
+          {pageUrl && (
+            <a
+              href={pageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3.5 inline-block text-xs text-white/45 hover:text-amber-300 underline underline-offset-4 transition-colors"
+            >
+              Or open full-screen in new tab
+            </a>
+          )}
         </div>
       </div>
     );
