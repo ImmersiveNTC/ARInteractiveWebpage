@@ -7,6 +7,7 @@ import { AssetItem } from '../lib/assetTypes';
 import {
   markInlineArNavigation,
   useIsMobileEdgeOrFirefox,
+  useReturnUrl,
 } from '../lib/browserDetect';
 import { GalleryNav, GalleryPageKey } from './GalleryNav';
 
@@ -60,6 +61,7 @@ export function ARGalleryView({
   const router = useRouter();
   const isIOS = useIsIOS();
   const useGlbAR = useIsMobileEdgeOrFirefox();
+  const returnUrl = useReturnUrl();
   const isGlbGallery = baseRoute === '/ARglb';
   const shouldRedirectToGlb = !isGlbGallery && useGlbAR;
 
@@ -135,7 +137,11 @@ export function ARGalleryView({
               <Link
                 key={model.id}
                 id={model.id}
-                href={`${baseRoute}/${model.slug}`}
+                href={
+                  isGlbGallery && returnUrl
+                    ? `${baseRoute}/${model.slug}?return=${encodeURIComponent(returnUrl)}`
+                    : `${baseRoute}/${model.slug}`
+                }
                 onClick={isGlbGallery ? markInlineArNavigation : undefined}
                 className="iosar-card"
                 style={{

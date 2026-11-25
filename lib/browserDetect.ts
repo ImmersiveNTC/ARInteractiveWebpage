@@ -185,3 +185,90 @@ export function useIsFullscreenSupported(): boolean {
     getFullscreenSupportedServerSnapshot
   );
 }
+
+/**
+ * Extracts and validates an optional ?return=<Rise URL> query parameter from the current URL.
+ * Supports both URL-encoded and unencoded Articulate Rise links containing #/lessons/... hashes.
+ */
+export function getReturnUrlFromLocation(): string | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const rawReturn = params.get('return');
+  if (!rawReturn) return null;
+
+  // If Rise link was pasted unencoded with #/lessons/..., browser puts #... into window.location.hash.
+  const combined =
+    !rawReturn.includes('#') && window.location.hash
+      ? `${rawReturn}${window.location.hash}`
+      : rawReturn;
+
+  try {
+    const parsed = new URL(combined);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.toString();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function getNullServerSnapshot(): string | null {
+  return null;
+}
+
+/** SSR-safe hook returning the validated ?return=<Rise URL> if provided, else null. */
+export function useReturnUrl(): string | null {
+  return useSyncExternalStore(
+    emptySubscribe,
+    getReturnUrlFromLocation,
+    getNullServerSnapshot
+  );
+}
+
+function getIsFromEmbedSnapshot(): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('embed') === '1' || getReturnUrlFromLocation() !== null;
+}
+
+function getFalseServerSnapshot(): boolean {
+  return false;
+}
+
+/** SSR-safe hook returning true when the AR tab was opened from an embedded Rise page. */
+export function useIsFromEmbed(): boolean {
+  return useSyncExternalStore(
+    emptySubscribe,
+    getIsFromEmbedSnapshot,
+    getFalseServerSnapshot
+  );
+}
+
+/**
+ * Builds the top-level AR launch URL from an embedded iframe, adding embed=1 and
+ * preserving any validated ?return=<Rise URL> parameter (properly URL-encoded).
+ */
+export function getEmbeddedArLaunchUrl(): string {
+  if (typeof window === 'undefined') return '';
+  const url = new URL(window.location.pathname, window.location.origin);
+  url.searchParams.set('embed', '1');
+  const returnUrl = getReturnUrlFromLocation();
+  if (returnUrl) {
+    url.searchParams.set('return', returnUrl);
+  }
+  return url.toString();
+}
+
+function getEmptyStringServerSnapshot(): string {
+  return '';
+}
+
+/** SSR-safe hook returning the top-level AR launch URL (with embed=1 & encoded return URL). */
+export function useEmbeddedArLaunchUrl(): string {
+  return useSyncExternalStore(
+    emptySubscribe,
+    getEmbeddedArLaunchUrl,
+    getEmptyStringServerSnapshot
+  );
+}

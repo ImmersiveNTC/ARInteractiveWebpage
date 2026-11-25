@@ -6,7 +6,7 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BASE_PATH } from '../lib/assetTypes';
@@ -17,13 +17,12 @@ import {
   isDocumentFullscreen,
   requestElementFullscreen,
   useEmbedContext,
+  useEmbeddedArLaunchUrl,
+  useIsFromEmbed,
   useIsFullscreenSupported,
+  useReturnUrl,
 } from '../lib/browserDetect';
 import { I3DStandaloneViewer } from './I3DStandaloneViewer';
-
-const emptySubscribe = () => () => {};
-const getPageUrlSnapshot = () => (typeof window !== 'undefined' ? window.location.href : '');
-const getServerPageUrl = () => '';
 
 export type WebARSlamViewerProps = {
   glbUrl: string;
@@ -189,9 +188,12 @@ export function WebARSlamViewer({
 }: WebARSlamViewerProps) {
   const embedContext = useEmbedContext();
   const canFullscreen = useIsFullscreenSupported();
-  const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
+  const arLaunchUrl = useEmbeddedArLaunchUrl();
+  const isFromEmbed = useIsFromEmbed();
+  const returnUrl = useReturnUrl();
   const [cameFromGallery] = useState<boolean>(() => hasInlineArNavigation());
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isDocumentFullscreen());
+  const [closedFallback, setClosedFallback] = useState(false);
   const [isPlaced, setIsPlaced] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
   const [modelLoading, setModelLoading] = useState(true);
@@ -226,6 +228,26 @@ export function WebARSlamViewer({
     } else {
       requestElementFullscreen(containerRef.current ?? document.documentElement);
     }
+  };
+
+  const handleCloseFromEmbed = () => {
+    stopXR8();
+    exitDocumentFullscreen();
+    if (returnUrl) {
+      // Always navigate straight back to the configured Articulate Rise course URL
+      window.location.assign(returnUrl);
+      return;
+    }
+    // Fallback when opened with ?embed=1 without a ?return=<Rise URL> parameter
+    try {
+      window.opener?.focus?.();
+    } catch {
+      // Ignore cross-origin opener focus restrictions
+    }
+    window.close();
+    window.setTimeout(() => {
+      setClosedFallback(true);
+    }, 250);
   };
 
   // Run 8th Wall 6DoF SLAM only in a top-level browser tab (where iOS WebKit grants camera + motion sensors).
@@ -1068,9 +1090,15 @@ export function WebARSlamViewer({
 
         {/* Prominent View in AR button (launches full-screen 6DoF SLAM in top-level Edge tab) */}
         <a
-          href={pageUrl || '#'}
+          href={arLaunchUrl || '#'}
           target="_blank"
-          rel="noopener noreferrer"
+          onClick={e => {
+            if (!arLaunchUrl) return;
+            const win = window.open(arLaunchUrl, '_blank');
+            if (win) {
+              e.preventDefault();
+            }
+          }}
           className="absolute bottom-4 right-4 z-30 inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-semibold text-xs sm:text-sm shadow-xl transition-all"
         >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -1095,25 +1123,40 @@ export function WebARSlamViewer({
         className="w-full! h-full! block"
       />
 
-      {/* Top Controls: Back Button + Optional Fullscreen Toggle */}
+      {/* Top Controls: Close (×) when launched from Rise, or Back Button when browsing site */}
       <header
         className="absolute top-5 left-5 right-5 z-30 flex items-center justify-between gap-3 pointer-events-none"
         onPointerDown={e => e.stopPropagation()}
         onTouchStart={e => e.stopPropagation()}
       >
-        <Link
-          href={backHref}
-          onClick={() => {
-            stopXR8();
-            exitDocumentFullscreen();
-          }}
-          className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0 backdrop-blur-md shadow-lg"
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          {backLabel}
-        </Link>
+        {isFromEmbed ? (
+          <button
+            type="button"
+            onClick={handleCloseFromEmbed}
+            aria-label="Close AR and return to training"
+            title="Close and return to training"
+            className="pointer-events-auto w-11 h-11 rounded-full bg-black/55 hover:bg-black/75 border border-white/25 text-white flex items-center justify-center transition-all active:scale-95 shrink-0 backdrop-blur-md shadow-2xl cursor-pointer"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        ) : (
+          <Link
+            href={backHref}
+            onClick={() => {
+              stopXR8();
+              exitDocumentFullscreen();
+            }}
+            className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0 backdrop-blur-md shadow-lg"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            {backLabel}
+          </Link>
+        )}
 
         {canFullscreen && (
           <button
@@ -1181,6 +1224,22 @@ export function WebARSlamViewer({
             >
               Retry AR Camera
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Closed-Tab Fallback Overlay (only shown if no ?return= URL was passed and browser blocked window.close()) */}
+      {closedFallback && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-6"
+          onPointerDown={e => e.stopPropagation()}
+          onTouchStart={e => e.stopPropagation()}
+        >
+          <div className="w-full max-w-sm rounded-3xl border border-white/15 bg-white/10 p-6 text-center shadow-2xl">
+            <h2 className="text-lg font-bold text-white mb-2">AR Session Closed</h2>
+            <p className="text-sm text-white/75">
+              Please close this tab or switch back to your Rise training tab to continue.
+            </p>
           </div>
         </div>
       )}
