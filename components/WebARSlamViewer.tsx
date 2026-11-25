@@ -6,7 +6,7 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BASE_PATH } from '../lib/assetTypes';
@@ -19,9 +19,15 @@ import {
   useEmbedContext,
   useIsFullscreenSupported,
 } from '../lib/browserDetect';
+import { I3DStandaloneViewer } from './I3DStandaloneViewer';
+
+const emptySubscribe = () => () => {};
+const getPageUrlSnapshot = () => (typeof window !== 'undefined' ? window.location.href : '');
+const getServerPageUrl = () => '';
 
 export type WebARSlamViewerProps = {
   glbUrl: string;
+  fileName?: string;
   displayName: string;
   backHref: string;
   backLabel: string;
@@ -176,15 +182,15 @@ function loadXR8Engine(): Promise<XR8Global> {
  */
 export function WebARSlamViewer({
   glbUrl,
+  fileName,
   displayName,
   backHref,
   backLabel,
 }: WebARSlamViewerProps) {
   const embedContext = useEmbedContext();
   const canFullscreen = useIsFullscreenSupported();
-  // If user navigated here by tapping an asset card inside /ARglb, auto-start inline AR immediately.
-  // If embedded directly as a standalone Rise block, wait for a single tap so stacked blocks don't fight over the camera.
-  const [allowInlineStart, setAllowInlineStart] = useState<boolean>(() => hasInlineArNavigation());
+  const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
+  const [cameFromGallery] = useState<boolean>(() => hasInlineArNavigation());
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isDocumentFullscreen());
   const [isPlaced, setIsPlaced] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
@@ -194,6 +200,9 @@ export function WebARSlamViewer({
   const [elevationLabel, setElevationLabel] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
+
+  const resolvedFileName =
+    fileName ?? decodeURIComponent(glbUrl.split('/').pop() || `${displayName}.glb`);
 
   useEffect(() => {
     clearInlineArNavigation();
@@ -211,12 +220,6 @@ export function WebARSlamViewer({
     };
   }, []);
 
-  const handleStartInlineAR = () => {
-    // Request browser Fullscreen API synchronously inside the user tap gesture (no new tab).
-    requestElementFullscreen(document.documentElement);
-    setAllowInlineStart(true);
-  };
-
   const handleToggleFullscreen = () => {
     if (isDocumentFullscreen()) {
       exitDocumentFullscreen();
@@ -225,8 +228,10 @@ export function WebARSlamViewer({
     }
   };
 
-  const shouldRunSlam =
-    embedContext === 'top' || (embedContext === 'iframe' && allowInlineStart);
+  // Run 8th Wall 6DoF SLAM only in a top-level browser tab (where iOS WebKit grants camera + motion sensors).
+  // When embedded inline in an iframe (e.g. Articulate Rise Code Block), show the live interactive 3D GLB
+  // viewer with a "View in AR" button that launches full-screen 6DoF AR in Edge.
+  const shouldRunSlam = embedContext === 'top';
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1010,56 +1015,70 @@ export function WebARSlamViewer({
     );
   }
 
-  if (embedContext === 'iframe' && !allowInlineStart) {
+  if (embedContext === 'iframe') {
+    const fullscreenButton = canFullscreen ? (
+      <button
+        type="button"
+        onClick={() => {
+          if (isDocumentFullscreen()) {
+            exitDocumentFullscreen();
+          } else {
+            requestElementFullscreen(document.documentElement);
+          }
+        }}
+        aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white/85 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+      >
+        {isFullscreen ? (
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="4 14 10 14 10 20" />
+            <polyline points="20 10 14 10 14 4" />
+            <line x1="14" y1="10" x2="21" y2="3" />
+            <line x1="3" y1="21" x2="10" y2="14" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 3 21 3 21 9" />
+            <polyline points="9 21 3 21 3 15" />
+            <line x1="21" y1="3" x2="14" y2="10" />
+            <line x1="3" y1="21" x2="10" y2="14" />
+          </svg>
+        )}
+      </button>
+    ) : null;
+
     return (
-      <div className="app-page min-h-dvh w-full text-white font-sans flex flex-col items-center justify-center p-5">
-        <div className="w-full max-w-sm rounded-3xl border border-amber-500/20 bg-white/5 backdrop-blur-md p-6 text-center shadow-2xl">
-          <div className="mx-auto mb-4 flex items-center justify-center">
-            <div className="iosar-target" aria-hidden="true">
-              <div
-                className="iosar-target__ring iosar-target__ring--outer"
-                style={{ borderColor: 'rgba(245, 158, 11, 0.9)' }}
-              />
-              <div
-                className="iosar-target__ring iosar-target__ring--inner"
-                style={{ borderColor: 'rgba(245, 158, 11, 0.9)' }}
-              />
-              <div className="iosar-target__corners">
-                {[0, 1, 2, 3].map(i => (
-                  <div
-                    key={i}
-                    className={`iosar-target__corner iosar-target__corner--${i}`}
-                    style={{ borderColor: 'rgba(245, 158, 11, 0.9)' }}
-                  />
-                ))}
-              </div>
-              <div
-                className="iosar-target__dot"
-                style={{ backgroundColor: 'rgba(245, 158, 11, 0.9)' }}
-              />
-            </div>
-          </div>
+      <div className="relative w-full h-dvh bg-[#666666] text-white font-sans overflow-hidden">
+        <I3DStandaloneViewer
+          fileUrl={glbUrl}
+          fileName={resolvedFileName}
+          displayName={displayName}
+          showInteractiveControls={false}
+          fullBleed={true}
+          backHref={cameFromGallery ? backHref : undefined}
+          backLabel={backLabel}
+          headerRight={fullscreenButton}
+        />
 
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-400/85 mb-1.5">
-            AR Experience
-          </p>
-          <h1 className="text-xl font-bold text-white mb-2">{displayName}</h1>
-          <p className="text-xs text-white/60 mb-5 leading-relaxed">
-            Tap below to start the AR camera right here.
-          </p>
-
-          <button
-            type="button"
-            onClick={handleStartInlineAR}
-            className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-black font-semibold text-sm transition-all shadow-lg cursor-pointer"
-          >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-              <circle cx="12" cy="13" r="4" />
-            </svg>
-            Start AR Experience
-          </button>
+        {/* Subtle interaction hint (bottom-left) */}
+        <div className="absolute bottom-4 left-4 z-20 pointer-events-none hidden sm:flex items-center px-3 py-1.5 rounded-full bg-black/45 backdrop-blur-md border border-white/10 text-[11px] text-white/75">
+          Drag to rotate • Scroll or pinch to zoom
         </div>
+
+        {/* Prominent View in AR button (launches full-screen 6DoF SLAM in top-level Edge tab) */}
+        <a
+          href={pageUrl || '#'}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute bottom-4 right-4 z-30 inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-semibold text-xs sm:text-sm shadow-xl transition-all"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <circle cx="12" cy="13" r="4" />
+          </svg>
+          View in AR
+        </a>
       </div>
     );
   }

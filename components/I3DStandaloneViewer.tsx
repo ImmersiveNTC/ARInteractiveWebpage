@@ -1,14 +1,15 @@
 "use client";
 
 import dynamic from 'next/dynamic';
+import { ReactNode } from 'react';
 
 const I3DViewerModal = dynamic(
   () => import('./I3DViewerModal').then(mod => mod.I3DViewerModal),
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-full min-h-[420px] flex items-center justify-center bg-[#666666] rounded-3xl">
-        <div className="i3d-cube-wrap" style={{ transform: 'scale(3.75)' }}>
+      <div className="w-full h-full min-h-[260px] flex items-center justify-center bg-[#666666]">
+        <div className="i3d-cube-wrap" style={{ transform: 'scale(2.6)' }}>
           <div className="i3d-cube">
             <div className="i3d-cube__face i3d-cube__face--front" />
             <div className="i3d-cube__face i3d-cube__face--back" />
@@ -29,6 +30,8 @@ type I3DStandaloneViewerProps = {
   displayName: string;
   showInteractiveControls: boolean;
   embedded?: boolean;
+  fullBleed?: boolean;
+  headerRight?: ReactNode;
   backHref?: string;
   backLabel?: string;
 };

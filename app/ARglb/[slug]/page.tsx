@@ -25,6 +25,7 @@ export default async function ARGlbItemPage({ params }: { params: Promise<{ slug
   return (
     <WebARSlamViewer
       glbUrl={item.fileUrl}
+      fileName={item.fileName}
       displayName={item.displayName}
       backHref="/ARglb"
       backLabel="Back to AR Gallery"

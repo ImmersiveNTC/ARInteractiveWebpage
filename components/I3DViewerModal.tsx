@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -13,6 +13,8 @@ type I3DViewerModalProps = {
   displayName?: string;
   showInteractiveControls?: boolean;
   embedded?: boolean;
+  fullBleed?: boolean;
+  headerRight?: ReactNode;
   backHref?: string;
   backLabel?: string;
   onClose?: () => void;
@@ -29,6 +31,8 @@ export function I3DViewerModal({
   displayName,
   showInteractiveControls = true,
   embedded = false,
+  fullBleed = false,
+  headerRight,
   backHref,
   backLabel = "Back to Gallery",
   onClose,
@@ -164,15 +168,19 @@ export function I3DViewerModal({
       if (!containerRef.current) return;
       const w = containerRef.current.clientWidth;
       const h = containerRef.current.clientHeight;
+      if (w <= 0 || h <= 0) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
     window.addEventListener("resize", handleResize);
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleResize) : null;
+    resizeObserver?.observe(containerRef.current);
 
     // Load Model
     const ext = fileName.split('.').pop()?.toLowerCase();
-    setLoadError(null);
+    queueMicrotask(() => setLoadError(null));
     
     const onModelLoaded = (modelScene: THREE.Group, animations?: THREE.AnimationClip[], gltfData?: unknown) => {
       setLoading(false);
@@ -295,8 +303,10 @@ export function I3DViewerModal({
         });
       } catch (e) {
         console.error(e);
-        setLoadError('Browser 3D preview is unavailable for this binary USDZ file. Scan the QR code to view on iPhone or download the USDZ.');
-        setLoading(false);
+        queueMicrotask(() => {
+          setLoadError('Browser 3D preview is unavailable for this binary USDZ file. Scan the QR code to view on iPhone or download the USDZ.');
+          setLoading(false);
+        });
       }
     } else {
       // Fallback (e.g. .reality files not supported by Three.js)
@@ -442,6 +452,7 @@ export function I3DViewerModal({
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener("resize", handleResize);
+      resizeObserver?.disconnect();
       renderer.dispose();
       // Wait to dispose controls properly
       controls.dispose();
@@ -588,21 +599,27 @@ export function I3DViewerModal({
 
   const titleText = displayName ?? fileName;
   const subtitleText = displayName ?? (fileName.substring(0, fileName.lastIndexOf('.')) || fileName);
-  const isStandalone = embedded || (Boolean(backHref) && !onClose);
+  const isStandalone = fullBleed || embedded || (Boolean(backHref) && !onClose);
 
   const viewerContent = (
     <div
       className={
-        embedded
-          ? "relative w-full h-full min-h-[420px] bg-[#666666] flex flex-col overflow-hidden rounded-3xl border border-white/10"
-          : isStandalone
-            ? "relative w-full h-dvh bg-[#666666] flex flex-col overflow-hidden"
-            : "relative w-full h-full max-w-7xl max-h-[90vh] bg-[#666666] rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col"
+        fullBleed
+          ? "relative w-full h-dvh bg-[#666666] flex flex-col overflow-hidden"
+          : embedded
+            ? "relative w-full h-full min-h-[420px] bg-[#666666] flex flex-col overflow-hidden rounded-3xl border border-white/10"
+            : isStandalone
+              ? "relative w-full h-dvh bg-[#666666] flex flex-col overflow-hidden"
+              : "relative w-full h-full max-w-7xl max-h-[90vh] bg-[#666666] rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col"
       }
     >
       {/* Header Bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20 relative z-20">
-        <div className="flex items-center gap-4 min-w-0">
+      <div
+        className={`flex items-center justify-between border-b border-white/10 bg-black/20 relative z-20 ${
+          fullBleed ? "px-4 py-2.5 gap-3" : "px-6 py-4"
+        }`}
+      >
+        <div className="flex items-center gap-3 min-w-0">
           {backHref && (
             <Link
               href={backHref}
@@ -614,19 +631,24 @@ export function I3DViewerModal({
               {backLabel}
             </Link>
           )}
-          <h2 className="text-lg font-medium text-white truncate">{titleText}</h2>
+          <h2 className={`${fullBleed ? "text-sm md:text-base" : "text-lg"} font-medium text-white truncate`}>
+            {titleText}
+          </h2>
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition-colors"
-            aria-label="Close 3D viewer"
-          >
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {headerRight}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+              aria-label="Close 3D viewer"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 3D Canvas Container */}
@@ -661,14 +683,16 @@ export function I3DViewerModal({
         )}
 
         {/* TEMPORARY SUBTITLE: Show asset name (Delete block to disable) */}
-        <div className="absolute bottom-6 left-6 pointer-events-none">
-          <span
-            className="text-yellow-400 font-sans font-thin text-sm tracking-widest uppercase"
-            style={{ fontWeight: 100 }}
-          >
-            {subtitleText}
-          </span>
-        </div>
+        {!fullBleed && (
+          <div className="absolute bottom-6 left-6 pointer-events-none">
+            <span
+              className="text-yellow-400 font-sans font-thin text-sm tracking-widest uppercase"
+              style={{ fontWeight: 100 }}
+            >
+              {subtitleText}
+            </span>
+          </div>
+        )}
 
         {/* Controls Overlay (Interactive mode only) */}
         {showInteractiveControls && (

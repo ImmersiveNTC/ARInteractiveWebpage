@@ -6,8 +6,6 @@ import { useEffect, useState } from 'react';
 import { AssetItem } from '../lib/assetTypes';
 import {
   markInlineArNavigation,
-  requestElementFullscreen,
-  useEmbedContext,
   useIsMobileEdgeOrFirefox,
 } from '../lib/browserDetect';
 import { GalleryNav, GalleryPageKey } from './GalleryNav';
@@ -62,7 +60,6 @@ export function ARGalleryView({
   const router = useRouter();
   const isIOS = useIsIOS();
   const useGlbAR = useIsMobileEdgeOrFirefox();
-  const embedContext = useEmbedContext();
   const isGlbGallery = baseRoute === '/ARglb';
   const shouldRedirectToGlb = !isGlbGallery && useGlbAR;
 
@@ -139,16 +136,7 @@ export function ARGalleryView({
                 key={model.id}
                 id={model.id}
                 href={`${baseRoute}/${model.slug}`}
-                onClick={
-                  isGlbGallery
-                    ? () => {
-                        markInlineArNavigation();
-                        if (embedContext === 'iframe') {
-                          requestElementFullscreen(document.documentElement);
-                        }
-                      }
-                    : undefined
-                }
+                onClick={isGlbGallery ? markInlineArNavigation : undefined}
                 className="iosar-card"
                 style={{
                   animationDelay: `${model.index * 110 + 60}ms`,
