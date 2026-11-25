@@ -6,19 +6,19 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BASE_PATH } from '../lib/assetTypes';
 import {
   clearInlineArNavigation,
+  exitDocumentFullscreen,
   hasInlineArNavigation,
+  isDocumentFullscreen,
+  requestElementFullscreen,
   useEmbedContext,
+  useIsFullscreenSupported,
 } from '../lib/browserDetect';
-
-const emptySubscribe = () => () => {};
-const getPageUrlSnapshot = () => (typeof window !== 'undefined' ? window.location.href : '');
-const getServerPageUrl = () => '';
 
 export type WebARSlamViewerProps = {
   glbUrl: string;
@@ -181,10 +181,11 @@ export function WebARSlamViewer({
   backLabel,
 }: WebARSlamViewerProps) {
   const embedContext = useEmbedContext();
-  const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
+  const canFullscreen = useIsFullscreenSupported();
   // If user navigated here by tapping an asset card inside /ARglb, auto-start inline AR immediately.
   // If embedded directly as a standalone Rise block, wait for a single tap so stacked blocks don't fight over the camera.
   const [allowInlineStart, setAllowInlineStart] = useState<boolean>(() => hasInlineArNavigation());
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isDocumentFullscreen());
   const [isPlaced, setIsPlaced] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
   const [modelLoading, setModelLoading] = useState(true);
@@ -197,6 +198,32 @@ export function WebARSlamViewer({
   useEffect(() => {
     clearInlineArNavigation();
   }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(isDocumentFullscreen());
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+    };
+  }, []);
+
+  const handleStartInlineAR = () => {
+    // Request browser Fullscreen API synchronously inside the user tap gesture (no new tab).
+    requestElementFullscreen(document.documentElement);
+    setAllowInlineStart(true);
+  };
+
+  const handleToggleFullscreen = () => {
+    if (isDocumentFullscreen()) {
+      exitDocumentFullscreen();
+    } else {
+      requestElementFullscreen(containerRef.current ?? document.documentElement);
+    }
+  };
 
   const shouldRunSlam =
     embedContext === 'top' || (embedContext === 'iframe' && allowInlineStart);
@@ -578,6 +605,8 @@ export function WebARSlamViewer({
         syncCanvasDimensions();
         resizeHandler = syncCanvasDimensions;
         window.addEventListener('resize', syncCanvasDimensions);
+        document.addEventListener('fullscreenchange', syncCanvasDimensions);
+        document.addEventListener('webkitfullscreenchange', syncCanvasDimensions);
 
         const reactSafeCanvasModule: XR8PipelineModule = {
           name: 'react-safe-fullwindow-canvas',
@@ -959,6 +988,8 @@ export function WebARSlamViewer({
       disposed = true;
       if (resizeHandler) {
         window.removeEventListener('resize', resizeHandler);
+        document.removeEventListener('fullscreenchange', resizeHandler);
+        document.removeEventListener('webkitfullscreenchange', resizeHandler);
       }
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('pointermove', onPointerMove);
@@ -1019,7 +1050,7 @@ export function WebARSlamViewer({
 
           <button
             type="button"
-            onClick={() => setAllowInlineStart(true)}
+            onClick={handleStartInlineAR}
             className="inline-flex items-center justify-center gap-2.5 w-full py-3.5 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-black font-semibold text-sm transition-all shadow-lg cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -1028,17 +1059,6 @@ export function WebARSlamViewer({
             </svg>
             Start AR Experience
           </button>
-
-          {pageUrl && (
-            <a
-              href={pageUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3.5 inline-block text-xs text-white/45 hover:text-amber-300 underline underline-offset-4 transition-colors"
-            >
-              Or open full-screen in new tab
-            </a>
-          )}
         </div>
       </div>
     );
@@ -1056,22 +1076,51 @@ export function WebARSlamViewer({
         className="w-full! h-full! block"
       />
 
-      {/* Top-Left Back Button */}
+      {/* Top Controls: Back Button + Optional Fullscreen Toggle */}
       <header
-        className="absolute top-5 left-5 z-30 pointer-events-auto"
+        className="absolute top-5 left-5 right-5 z-30 flex items-center justify-between gap-3 pointer-events-none"
         onPointerDown={e => e.stopPropagation()}
         onTouchStart={e => e.stopPropagation()}
       >
         <Link
           href={backHref}
-          onClick={stopXR8}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0 backdrop-blur-md shadow-lg"
+          onClick={() => {
+            stopXR8();
+            exitDocumentFullscreen();
+          }}
+          className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white text-xs font-medium transition-colors shrink-0 backdrop-blur-md shadow-lg"
         >
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
           {backLabel}
         </Link>
+
+        {canFullscreen && (
+          <button
+            type="button"
+            onClick={handleToggleFullscreen}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            className="pointer-events-auto w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white/85 hover:text-white flex items-center justify-center transition-colors shrink-0 backdrop-blur-md shadow-lg cursor-pointer"
+          >
+            {isFullscreen ? (
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 3 21 3 21 9" />
+                <polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            )}
+          </button>
+        )}
       </header>
 
       {/* Subtle Placement Prompt while Scanning */}
@@ -1106,24 +1155,10 @@ export function WebARSlamViewer({
         >
           <div className="w-full max-w-sm rounded-3xl border border-white/15 bg-white/10 p-6 text-center shadow-2xl">
             <p className="text-sm text-white/90 mb-5">{errorMessage}</p>
-            {embedContext === 'iframe' && pageUrl && (
-              <a
-                href={pageUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 w-full py-3 px-5 mb-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors"
-              >
-                Open AR in New Tab
-              </a>
-            )}
             <button
               type="button"
               onClick={() => setRetryTick(t => t + 1)}
-              className={`w-full py-3 px-5 rounded-2xl font-semibold text-sm transition-colors cursor-pointer ${
-                embedContext === 'iframe'
-                  ? 'bg-white/10 hover:bg-white/20 border border-white/15 text-white'
-                  : 'bg-amber-500 hover:bg-amber-400 text-black'
-              }`}
+              className="w-full py-3 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors cursor-pointer"
             >
               Retry AR Camera
             </button>

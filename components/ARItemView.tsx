@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { QRCode } from 'react-qrcode-logo';
 import { AssetItem, BASE_PATH } from '../lib/assetTypes';
-import { useIsMobileEdgeOrFirefox } from '../lib/browserDetect';
+import { useEmbedContext, useIsMobileEdgeOrFirefox } from '../lib/browserDetect';
 import { I3DStandaloneViewer } from './I3DStandaloneViewer';
 
 type BrowserMode = 'loading' | 'ios-safari-chrome' | 'ios-download' | 'desktop';
@@ -128,6 +128,7 @@ type ARItemViewProps = {
 export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemViewProps) {
   const router = useRouter();
   const useGlbAR = useIsMobileEdgeOrFirefox();
+  const embedContext = useEmbedContext();
   const fileExtLabel = (item.fileName.split('.').pop() || 'USDZ').toUpperCase();
   const browserMode = useSyncExternalStore(emptySubscribe, getBrowserModeSnapshot, getServerBrowserMode);
   const pageUrl = useSyncExternalStore(emptySubscribe, getPageUrlSnapshot, getServerPageUrl);
@@ -270,7 +271,7 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
   }, [router, useGlbAR]);
 
   useEffect(() => {
-    if (useGlbAR || autoTriggeredRef.current) return;
+    if (useGlbAR || embedContext === 'loading' || autoTriggeredRef.current) return;
 
     if (browserMode === 'ios-safari-chrome') {
       autoTriggeredRef.current = true;
@@ -286,8 +287,10 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
         return;
       }
 
-      // Auto-open Quick Look once the file has finished preloading.
-      pendingLaunchRef.current = true;
+      // Auto-open Quick Look only when visited directly in a top-level tab.
+      // When embedded inside an iframe (e.g. Articulate Rise), still preload in the background
+      // and wait for a direct tap on the native rel="ar" button to avoid iframe navigation / new tabs.
+      pendingLaunchRef.current = embedContext !== 'iframe';
 
       let cancelled = false;
       preloadAsset(item.fileUrl, progress => {
@@ -315,7 +318,7 @@ export function ARItemView({ item, backHref, backLabel, galleryTitle }: ARItemVi
       }, 120);
       return () => clearTimeout(timer);
     }
-  }, [browserMode, item.fileUrl, launchInSafariOrFallback, launchQuickLook, useGlbAR]);
+  }, [browserMode, embedContext, item.fileUrl, launchInSafariOrFallback, launchQuickLook, useGlbAR]);
 
   // One continuous bar: download fills 0–DOWNLOAD_SHARE%, Quick Look opening fills the rest.
   const showBar = openProgress !== null || loadState === 'loading';

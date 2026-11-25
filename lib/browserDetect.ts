@@ -98,3 +98,90 @@ export function hasInlineArNavigation(): boolean {
 export function clearInlineArNavigation(): void {
   inlineArNavigationPending = false;
 }
+
+type FullscreenDocument = Document & {
+  webkitFullscreenEnabled?: boolean;
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+};
+
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+/**
+ * Returns true if the current browser/iframe supports the standard or WebKit Fullscreen API.
+ * Note: Apple WebKit on iPhone does not support requestFullscreen on HTML elements/iframes
+ * (returns false safely so UI can hide unavailable fullscreen toggles).
+ */
+export function isFullscreenSupported(): boolean {
+  if (typeof document === 'undefined') return false;
+  const doc = document as FullscreenDocument;
+  const el = document.documentElement as FullscreenElement;
+  const hasMethod =
+    typeof el.requestFullscreen === 'function' ||
+    typeof el.webkitRequestFullscreen === 'function';
+  if (!hasMethod) return false;
+  if (typeof doc.fullscreenEnabled === 'boolean') return doc.fullscreenEnabled;
+  if (typeof doc.webkitFullscreenEnabled === 'boolean') return doc.webkitFullscreenEnabled;
+  return true;
+}
+
+export function isDocumentFullscreen(): boolean {
+  if (typeof document === 'undefined') return false;
+  const doc = document as FullscreenDocument;
+  return Boolean(doc.fullscreenElement || doc.webkitFullscreenElement);
+}
+
+/**
+ * Requests Fullscreen API on the target element (must be invoked directly inside a user gesture).
+ * Fails silently when unsupported (e.g., iPhone WebKit or iframe without allow="fullscreen").
+ */
+export function requestElementFullscreen(el?: HTMLElement | null): void {
+  if (typeof document === 'undefined') return;
+  if (isDocumentFullscreen()) return;
+  const target = (el ?? document.documentElement) as FullscreenElement;
+  const fn = target.requestFullscreen ?? target.webkitRequestFullscreen;
+  if (typeof fn !== 'function') return;
+  try {
+    const result = fn.call(target);
+    if (result && typeof (result as Promise<void>).catch === 'function') {
+      (result as Promise<void>).catch(() => {
+        // Ignore browser/iframe fullscreen policy denials.
+      });
+    }
+  } catch {
+    // Ignore synchronous fullscreen denials.
+  }
+}
+
+/** Exits fullscreen cleanly if currently active. */
+export function exitDocumentFullscreen(): void {
+  if (typeof document === 'undefined' || !isDocumentFullscreen()) return;
+  const doc = document as FullscreenDocument;
+  const fn = doc.exitFullscreen ?? doc.webkitExitFullscreen;
+  if (typeof fn !== 'function') return;
+  try {
+    const result = fn.call(doc);
+    if (result && typeof (result as Promise<void>).catch === 'function') {
+      (result as Promise<void>).catch(() => {
+        // Ignore exit errors.
+      });
+    }
+  } catch {
+    // Ignore exit errors.
+  }
+}
+
+function getFullscreenSupportedServerSnapshot(): boolean {
+  return false;
+}
+
+/** SSR-safe hook reporting whether Fullscreen API is supported in the active browser/iframe. */
+export function useIsFullscreenSupported(): boolean {
+  return useSyncExternalStore(
+    emptySubscribe,
+    isFullscreenSupported,
+    getFullscreenSupportedServerSnapshot
+  );
+}
